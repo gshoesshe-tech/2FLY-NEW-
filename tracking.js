@@ -4,6 +4,21 @@
   let orders = [];
   let active = null;
 
+  function facebookUrl(value) {
+    const raw = String(value || '').trim();
+    if (!raw) return '';
+    if (/^https?:\/\//i.test(raw)) return raw;
+    if (/^(?:www\.)?(?:facebook\.com|m\.facebook\.com|fb\.com|messenger\.com)\//i.test(raw)) return `https://${raw}`;
+    if (/^@?[a-z0-9.]+$/i.test(raw)) return `https://www.facebook.com/${raw.replace(/^@/, '')}`;
+    return `https://www.facebook.com/search/top?q=${encodeURIComponent(raw)}`;
+  }
+
+  function facebookLink(value, label = 'Open Facebook') {
+    const url = facebookUrl(value);
+    if (!url) return '';
+    return `<a class="btn small" href="${TF.esc(url)}" target="_blank" rel="noopener noreferrer">${TF.esc(label)}</a>`;
+  }
+
   function message(order, status = order.status, tracking = order.tracking_number) {
     const code = tracking ? `\nTracking number: ${tracking}` : '';
     if (status === 'waiting_stock') return `Hi! Confirmed na po ang payment for ${order.order_number}. Waiting lang po tayo sa requested stock/design. We’ll update you once ready for packing.`;
@@ -19,7 +34,7 @@
     const query = TF.$('trackingSearch').value.trim().toLowerCase();
     const filter = TF.$('trackingFilter').value;
     return orders.filter((order) => {
-      const found = !query || [order.customer_name, order.phone, order.order_number, order.tracking_number].some((value) => String(value || '').toLowerCase().includes(query));
+      const found = !query || [order.customer_name, order.phone, order.facebook_profile, order.order_number, order.tracking_number].some((value) => String(value || '').toLowerCase().includes(query));
       if (!found) return false;
       if (filter === 'all') return true;
       if (filter === 'active') return !['delivered', 'cancelled', 'refunded'].includes(order.status);
@@ -32,7 +47,7 @@
   function render() {
     const rows = filtered();
     TF.$('trackingTable').innerHTML = `<table><thead><tr><th>Customer</th><th>Order</th><th>Status</th><th>Courier</th><th>Tracking</th><th>Dates</th><th>Last update</th><th>Actions</th></tr></thead><tbody>${rows.map((order) => `<tr class="${order.missing_tracking || order.paid_not_shipped_alert ? 'attention-row' : ''}">
-      <td><strong>${TF.esc(order.customer_name)}</strong><br><small>${TF.esc(order.phone || '')}</small></td>
+      <td><strong>${TF.esc(order.customer_name)}</strong><br><small>${TF.esc(order.phone || '')}</small>${order.facebook_profile ? `<br>${facebookLink(order.facebook_profile, 'Open profile')}` : ''}</td>
       <td>${TF.esc(order.order_number)}<br><small>${TF.formatDate(order.order_date)}</small></td>
       <td>${TF.statusPill(order.status)}<br>${TF.statusPill(order.payment_status)}</td>
       <td>${TF.esc(String(order.fulfillment_method || 'unselected').toUpperCase().replace('_', '-'))}</td>
@@ -47,6 +62,10 @@
     active = order;
     TF.$('trackingDialogTitle').textContent = `${order.order_number} — ${order.customer_name}`;
     TF.$('trackingDialogMeta').innerHTML = `${TF.statusPill(order.payment_status)} ${TF.statusPill(order.status)}`;
+    const facebookButton = TF.$('trackingFacebookBtn');
+    const facebookProfileUrl = facebookUrl(order.facebook_profile);
+    facebookButton.classList.toggle('hidden', !facebookProfileUrl);
+    facebookButton.href = facebookProfileUrl || '#';
     TF.$('trackStatus').value = order.status;
     TF.$('trackMethod').value = order.fulfillment_method || 'unselected';
     TF.$('trackNumber').value = order.tracking_number || '';
@@ -106,7 +125,7 @@
   }
 
   async function load() {
-    const result = await TF.state.supa.from('v_daily_ops_orders_v14').select('*').order('last_activity_at', { ascending: false }).limit(5000);
+    const result = await TF.state.supa.from('v_daily_ops_orders_v15').select('*').order('last_activity_at', { ascending: false }).limit(5000);
     if (result.error) throw result.error;
     orders = result.data || [];
     TF.$('trackingMissing').textContent = orders.filter((order) => order.missing_tracking).length;

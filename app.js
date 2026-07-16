@@ -17,6 +17,21 @@
     return 'pcs';
   }
 
+  function facebookUrl(value) {
+    const raw = String(value || '').trim();
+    if (!raw) return '';
+    if (/^https?:\/\//i.test(raw)) return raw;
+    if (/^(?:www\.)?(?:facebook\.com|m\.facebook\.com|fb\.com|messenger\.com)\//i.test(raw)) return `https://${raw}`;
+    if (/^@?[a-z0-9.]+$/i.test(raw)) return `https://www.facebook.com/${raw.replace(/^@/, '')}`;
+    return `https://www.facebook.com/search/top?q=${encodeURIComponent(raw)}`;
+  }
+
+  function facebookLink(value, label = 'Open Facebook') {
+    const url = facebookUrl(value);
+    if (!url) return '';
+    return `<a class="btn small" href="${TF.esc(url)}" target="_blank" rel="noopener noreferrer">${TF.esc(label)}</a>`;
+  }
+
   function representativeProduct(categoryId, preferredSku = '') {
     const preferred = TF.state.productByCode.get(String(preferredSku || '').toUpperCase());
     if (preferred && preferred.category_id === categoryId) return preferred;
@@ -69,14 +84,20 @@
     const groups = [];
     const warnings = [];
     let current = null;
+    const escapeRegex = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const getField = (name) => {
-      const regex = new RegExp(`^${name}\\s*:\\s*(.*)$`, 'i');
+      const regex = new RegExp(`^${escapeRegex(name)}\\s*:\\s*(.*)$`, 'i');
       const line = lines.find((value) => regex.test(value));
       return line ? line.match(regex)[1].trim() : '';
     };
+    const getAnyField = (names) => names.map(getField).find(Boolean) || '';
 
     TF.$('orderCustomer').value = getField('Name');
     TF.$('orderPhone').value = getField('Phone');
+    TF.$('orderFacebook').value = getAnyField([
+      'Facebook Link / Profile', 'Facebook Link', 'Facebook Profile',
+      'FB Link / Profile', 'FB Link', 'FB Profile', 'Messenger Link', 'Facebook'
+    ]);
     TF.$('orderAddress').value = getField('Address');
 
     for (const line of lines) {
@@ -307,6 +328,7 @@
         form_fingerprint: fingerprint,
         customer_name: TF.$('orderCustomer').value.trim(),
         phone: TF.$('orderPhone').value.trim(),
+        facebook_profile: TF.$('orderFacebook').value.trim(),
         address: TF.$('orderAddress').value.trim(),
         order_type: TF.$('orderType').value,
         fulfillment_method: TF.$('fulfillmentMethod').value,
@@ -351,7 +373,7 @@
   function resetForm() {
     editingOrderId = null;
     parsedItems = [];
-    ['orderPaste', 'orderCustomer', 'orderPhone', 'orderAddress', 'orderNotes', 'paymentReference'].forEach((id) => { TF.$(id).value = ''; });
+    ['orderPaste', 'orderCustomer', 'orderPhone', 'orderFacebook', 'orderAddress', 'orderNotes', 'paymentReference'].forEach((id) => { TF.$(id).value = ''; });
     TF.$('paymentProof').value = '';
     TF.$('orderDate').value = TF.today();
     TF.$('paymentDate').value = TF.today();
@@ -389,6 +411,7 @@
     TF.$('orderPaste').value = order.raw_order_form || '';
     TF.$('orderCustomer').value = order.customer_name || '';
     TF.$('orderPhone').value = order.phone || '';
+    TF.$('orderFacebook').value = order.facebook_profile || '';
     TF.$('orderAddress').value = order.address || '';
     TF.$('orderDate').value = order.order_date || TF.today();
     TF.$('orderType').value = order.order_type || 'regular';
@@ -419,6 +442,7 @@
         raw_order_form: TF.$('orderPaste').value.trim(),
         customer_name: TF.$('orderCustomer').value.trim(),
         phone: TF.$('orderPhone').value.trim(),
+        facebook_profile: TF.$('orderFacebook').value.trim(),
         address: TF.$('orderAddress').value.trim(),
         order_type: TF.$('orderType').value,
         fulfillment_method: TF.$('fulfillmentMethod').value,
@@ -451,7 +475,7 @@
     const query = TF.$('orderSearch').value.trim().toLowerCase();
     const filter = TF.$('orderFilter').value;
     return orders.filter((order) => {
-      const searchMatch = !query || [order.order_number, order.customer_name, order.phone, order.tracking_number, order.latest_payment_account_name, order.status].some((value) => String(value || '').toLowerCase().includes(query));
+      const searchMatch = !query || [order.order_number, order.customer_name, order.phone, order.facebook_profile, order.tracking_number, order.latest_payment_account_name, order.status].some((value) => String(value || '').toLowerCase().includes(query));
       if (!searchMatch) return false;
       if (filter === 'all') return true;
       if (filter === 'today') return order.order_date === TF.today();
@@ -466,6 +490,7 @@
 
   function quickActions(order) {
     const actions = [`<button class="btn small" data-action="view" data-id="${order.id}">Open</button>`];
+    if (order.facebook_profile) actions.push(facebookLink(order.facebook_profile, 'Facebook'));
     if (TF.can('confirm_payments') && ['unpaid', 'partial'].includes(order.payment_status) && !['cancelled', 'refunded'].includes(order.status)) actions.push(`<button class="btn primary small" data-action="pay" data-id="${order.id}">Confirm Payment</button>`);
     if (TF.can('update_tracking')) {
       if (['confirmed', 'ready_to_pack'].includes(order.status) || (order.status === 'waiting_stock' && TF.num(order.shortage_quantity) === 0)) actions.push(`<button class="btn small" data-action="packing" data-id="${order.id}">Start Packing</button>`);
@@ -482,7 +507,7 @@
       <table><thead><tr><th>Order</th><th>Customer</th><th>Pieces</th><th>Total / Paid</th><th>Received in</th><th>Status</th><th>Tracking</th><th>Actions</th></tr></thead>
       <tbody>${rows.map((order) => `<tr class="${order.paid_not_shipped_alert || order.missing_tracking ? 'attention-row' : ''}">
         <td><strong>${TF.esc(order.order_number)}</strong><br><small>${TF.formatDate(order.order_date)}</small></td>
-        <td>${TF.esc(order.customer_name)}<br><small>${TF.esc(order.phone || '')}</small></td>
+        <td>${TF.esc(order.customer_name)}<br><small>${TF.esc(order.phone || '')}</small>${order.facebook_profile ? `<br>${facebookLink(order.facebook_profile, 'Open profile')}` : ''}</td>
         <td>${TF.num(order.total_quantity).toLocaleString()}</td>
         <td>${TF.money(order.total_due)}<br><small>${TF.money(order.verified_total_paid)} verified</small></td>
         <td>${TF.esc(order.latest_payment_account_name || '—')}<br><small>${TF.formatDate(order.latest_payment_date)}</small></td>
@@ -493,7 +518,7 @@
   }
 
   async function loadOrders() {
-    const result = await TF.state.supa.from('v_daily_ops_orders_v14').select('*').order('order_date', { ascending: false }).order('created_at', { ascending: false }).limit(5000);
+    const result = await TF.state.supa.from('v_daily_ops_orders_v15').select('*').order('order_date', { ascending: false }).order('created_at', { ascending: false }).limit(5000);
     if (result.error) throw result.error;
     orders = result.data || [];
     renderOrders();
@@ -534,6 +559,7 @@
     TF.$('detailStatus').innerHTML = `${TF.statusPill(order.payment_status)} ${TF.statusPill(order.status)}`;
     TF.$('detailCustomer').textContent = order.customer_name || '—';
     TF.$('detailPhone').textContent = order.phone || '—';
+    TF.$('detailFacebook').innerHTML = order.facebook_profile ? `${TF.esc(order.facebook_profile)}<br>${facebookLink(order.facebook_profile, 'Open Facebook / Messenger')}` : '—';
     TF.$('detailAddress').textContent = order.address || '—';
     TF.$('detailOrderDate').textContent = TF.formatDate(order.order_date);
     TF.$('detailPieces').textContent = TF.num(order.total_quantity).toLocaleString();

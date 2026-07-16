@@ -28,7 +28,7 @@
         <div id="editOrderBanner" class="notice info edit-banner hidden"><div><strong>Editing an order</strong><br><span id="editOrderLabel"></span></div><button id="cancelEditBtn" class="btn">Cancel edit</button></div>
         <div class="two-col wide-left">
           <article class="card">
-            <div class="card-head"><div><h3>Paste order form</h3><p>Paste the complete order form, then review the items.</p></div></div>
+            <div class="card-head"><div><h3>Paste order form</h3><p>Paste the complete order form. Customer details and category totals will be filled automatically.</p></div></div>
             <div class="card-body stack"><textarea id="orderPaste" class="paste-box" placeholder="Paste the complete 2FLY.GALLERIA order form here..."></textarea><button id="parseOrderBtn" class="btn primary">Read order form</button><div id="parseWarnings" class="notice warn hidden"></div></div>
           </article>
           <article class="card">
@@ -36,6 +36,7 @@
             <div class="card-body form-grid">
               <label>Name<input id="orderCustomer" required></label>
               <label>Phone<input id="orderPhone"></label>
+              <label class="span-2">Facebook Link / Profile<input id="orderFacebook" placeholder="Paste Facebook or Messenger profile link"></label>
               <label class="span-2">Address<textarea id="orderAddress"></textarea></label>
               <label>Actual order date<input id="orderDate" type="date"></label>
               <label>Order type<select id="orderType"><option value="regular">Regular</option><option value="made_to_order">Made to Order</option></select></label>
@@ -47,8 +48,8 @@
         </div>
 
         <article class="card">
-          <div class="card-head"><div><h3>Order items</h3><p id="parsedSummary">No order parsed yet.</p></div><button id="addItemBtn" class="btn">Add item</button></div>
-          <div class="table-wrap"><table><thead><tr><th>Category</th><th>SKU</th><th>Size</th><th>Qty</th><th>Unit price</th><th>Total</th><th></th></tr></thead><tbody id="parsedItemsBody"></tbody></table></div>
+          <div class="card-head"><div><h3>Order categories</h3><p id="parsedSummary">No order parsed yet.</p><small class="muted">Design codes stay in the original order form. Inventory and order totals are tracked by category only.</small></div><button id="addItemBtn" class="btn">Add category</button></div>
+          <div class="table-wrap"><table><thead><tr><th>Category</th><th>Qty</th><th>Unit price</th><th>Total</th><th></th></tr></thead><tbody id="parsedItemsBody"></tbody></table></div>
         </article>
 
         <div class="two-col">
@@ -87,14 +88,13 @@
       <article class="card">
         <div class="card-head filters-head">
           <div><h3>All orders</h3><p>Search and update payment, stock, status, and tracking.</p></div>
-          <div class="filter-row"><input id="orderSearch" placeholder="Search customer, phone, order or tracking"><select id="orderFilter"><option value="all">All orders</option><option value="today">Entered today</option><option value="awaiting">Awaiting / Partial payment</option><option value="paid">Paid</option><option value="waiting_stock">Waiting for Stock</option><option value="packing">Needs Packing</option><option value="ready_to_ship">Ready to Ship</option><option value="shipped">Shipped</option><option value="missing_tracking">Missing Tracking</option><option value="paid_late">Paid but not shipped</option><option value="delivered">Delivered</option><option value="cancelled">Cancelled</option></select></div>
+          <div class="filter-row"><input id="orderSearch" placeholder="Search customer, phone, Facebook, order or tracking"><select id="orderFilter"><option value="all">All orders</option><option value="today">Entered today</option><option value="awaiting">Awaiting / Partial payment</option><option value="paid">Paid</option><option value="waiting_stock">Waiting for Stock</option><option value="packing">Needs Packing</option><option value="ready_to_ship">Ready to Ship</option><option value="shipped">Shipped</option><option value="missing_tracking">Missing Tracking</option><option value="paid_late">Paid but not shipped</option><option value="delivered">Delivered</option><option value="cancelled">Cancelled</option></select></div>
         </div>
         <div class="table-wrap" id="ordersTable"></div>
       </article>
     </main>
   </section>
 </div>
-<datalist id="skuList"></datalist>
 
 <dialog id="orderDialog">
   <section class="dialog-card order-detail-card">
@@ -102,6 +102,7 @@
     <div class="detail-grid">
       <div><span>Customer</span><strong id="detailCustomer">—</strong></div>
       <div><span>Phone</span><strong id="detailPhone">—</strong></div>
+      <div class="span-2"><span>Facebook / Messenger</span><strong id="detailFacebook">—</strong></div>
       <div class="span-2"><span>Address</span><strong id="detailAddress">—</strong></div>
       <div><span>Order date</span><strong id="detailOrderDate">—</strong></div>
       <div><span>Pieces</span><strong id="detailPieces">0</strong></div>
