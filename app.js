@@ -17,13 +17,46 @@
     return 'pcs';
   }
 
+  function representativeProduct(categoryId, preferredSku = '') {
+    const preferred = TF.state.productByCode.get(String(preferredSku || '').toUpperCase());
+    if (preferred && preferred.category_id === categoryId) return preferred;
+    return TF.state.products.find((product) => product.category_id === categoryId && product.active) || null;
+  }
+
+  function categoryOptions(selectedId = '') {
+    return TF.state.categories.map((category) => `<option value="${TF.esc(category.id)}" ${category.id === selectedId ? 'selected' : ''}>${TF.esc(category.name)}</option>`).join('');
+  }
+
+  function summarizeStoredItems(items) {
+    const grouped = new Map();
+    (items || []).forEach((item) => {
+      const category = TF.state.categoryById.get(item.category_id);
+      const key = item.category_id || item.sku;
+      const existing = grouped.get(key) || {
+        category_id: item.category_id,
+        category_code: category?.code || '',
+        category: category?.name || item.product_name || item.sku,
+        sku: item.sku,
+        quantity: 0,
+        line_total: 0,
+        unit_price: 0
+      };
+      existing.quantity += TF.num(item.quantity);
+      existing.line_total += TF.num(item.line_total ?? (TF.num(item.quantity) * TF.num(item.unit_price)));
+      grouped.set(key, existing);
+    });
+    return [...grouped.values()].map((item) => ({
+      ...item,
+      unit_price: item.quantity > 0 ? item.line_total / item.quantity : 0
+    }));
+  }
+
   function fillBase() {
     TF.$('paymentAccount').innerHTML = TF.accountOptions(true);
     TF.$('addPaymentAccount').innerHTML = TF.accountOptions(true);
     TF.$('orderDate').value = TF.today();
     TF.$('paymentDate').value = TF.today();
     TF.$('addPaymentDate').value = TF.today();
-    TF.$('skuList').innerHTML = TF.state.products.map((product) => `<option value="${TF.esc(product.code)}">${TF.esc(product.name)}</option>`).join('');
   }
 
   function parseOrder() {
@@ -56,14 +89,7 @@
       if (!current) continue;
       const item = line.match(/^[•*]\s*(.+?)\s+[–—-]\s*x\s*(\d+)\s*$/i);
       if (item) {
-        let sku = item[1].trim();
-        let size = '';
-        const sizeMatch = sku.match(/\(\s*Size\s*:\s*([^)]+)\)/i);
-        if (sizeMatch) {
-          size = sizeMatch[1].trim().toUpperCase();
-          sku = sku.replace(sizeMatch[0], '').trim();
-        }
-        current.items.push({ sku: sku.toUpperCase(), quantity: Number(item[2]), size });
+        current.items.push({ sku: item[1].replace(/\(\s*Size\s*:[^)]+\)/i, '').trim().toUpperCase(), quantity: Number(item[2]) });
         continue;
       }
       const quantity = line.match(/^Category Qty\s*:\s*(\d+)/i);
@@ -72,60 +98,92 @@
       if (amount) current.amount = Number(amount[1].replace(/,/g, ''));
     }
 
-    const result = [];
+    const groupedCategories = new Map();
     groups.forEach((group) => {
       const category = TF.state.aliasToCategory.get(group.label);
-      if (!category) warnings.push(`Unknown category: ${group.label}`);
-      const totalQuantity = group.items.reduce((sum, item) => sum + item.quantity, 0);
-      if (group.quantity !== null && totalQuantity !== group.quantity) warnings.push(`${group.label}: items total ${totalQuantity}, but Category Qty says ${group.quantity}.`);
-      const unitPrice = group.amount !== null && totalQuantity > 0 ? group.amount / totalQuantity : null;
-      group.items.forEach((item) => {
+      if (!category) {
+        warnings.push(`Unknown category: ${group.label}`);
+        return;
+      }
+
+      const itemQuantity = group.items.reduce((sum, item) => sum + item.quantity, 0);
+      const totalQuantity = group.quantity ?? itemQuantity;
+      if (group.quantity !== null && itemQuantity > 0 && itemQuantity !== group.quantity) {
+        warnings.push(`${group.label}: design lines total ${itemQuantity}, but Category Qty says ${group.quantity}. Category Qty was used.`);
+      }
+      if (!totalQuantity || totalQuantity <= 0) {
+        warnings.push(`${group.label}: quantity is missing or zero.`);
+        return;
+      }
+
+      const preferredSku = group.items.find((item) => {
         const product = TF.state.productByCode.get(item.sku);
-        if (!product) warnings.push(`Unknown SKU: ${item.sku}`);
-        if (product && category && product.category_id !== category.id) warnings.push(`${item.sku} belongs to another category.`);
-        if (product?.requires_size && !item.size) warnings.push(`${item.sku} requires a size.`);
-        result.push({
-          category: category?.name || group.label,
-          category_code: category?.code || '',
-          sku: item.sku,
-          size: item.size,
-          quantity: item.quantity,
-          unit_price: unitPrice ?? Number(product?.default_sell_price || 0),
-          name: product?.name || item.sku
-        });
-      });
+        return product?.category_id === category.id;
+      })?.sku || '';
+      const product = representativeProduct(category.id, preferredSku);
+      if (!product) {
+        warnings.push(`${category.name}: no active product is available internally for saving.`);
+        return;
+      }
+
+      let amount = group.amount;
+      if (amount === null) {
+        const designTotal = group.items.reduce((sum, item) => {
+          const design = TF.state.productByCode.get(item.sku);
+          return sum + item.quantity * TF.num(design?.default_sell_price);
+        }, 0);
+        amount = designTotal || totalQuantity * TF.num(product.default_sell_price);
+      }
+
+      const existing = groupedCategories.get(category.id) || {
+        category_id: category.id,
+        category_code: category.code,
+        category: category.name,
+        sku: product.code,
+        quantity: 0,
+        amount: 0
+      };
+      existing.quantity += totalQuantity;
+      existing.amount += TF.num(amount);
+      groupedCategories.set(category.id, existing);
     });
+
+    const result = [...groupedCategories.values()].map((item) => ({
+      category_id: item.category_id,
+      category_code: item.category_code,
+      category: item.category,
+      sku: item.sku,
+      quantity: item.quantity,
+      unit_price: item.quantity > 0 ? item.amount / item.quantity : 0,
+      name: item.category
+    }));
 
     const totalLine = lines.find((line) => /^Total Amount\s*:/i.test(line));
     const shownTotal = totalLine ? Number((totalLine.match(/₱?\s*([\d,]+(?:\.\d+)?)/) || [])[1]?.replace(/,/g, '') || 0) : 0;
     const calculated = result.reduce((sum, item) => sum + item.quantity * item.unit_price, 0);
-    if (shownTotal && Math.abs(shownTotal - calculated) > 0.02) warnings.push(`Order form total is ${TF.money(shownTotal)}, while parsed items equal ${TF.money(calculated)}.`);
+    if (shownTotal && Math.abs(shownTotal - calculated) > 0.02) warnings.push(`Order form total is ${TF.money(shownTotal)}, while category totals equal ${TF.money(calculated)}.`);
 
     parsedItems = result;
     renderItems();
     TF.$('paymentAmount').value = String(calculated + shippingFee());
     lastExpected = calculated + shippingFee();
-    TF.$('parseWarnings').innerHTML = warnings.length ? warnings.map((warning) => `• ${TF.esc(warning)}`).join('<br>') : 'Order form recognized. Review the customer details and items before saving.';
+    TF.$('parseWarnings').innerHTML = warnings.length
+      ? warnings.map((warning) => `• ${TF.esc(warning)}`).join('<br>')
+      : 'Order form recognized. Customer details were filled automatically and designs were combined into category totals.';
     TF.$('parseWarnings').classList.remove('hidden');
   }
 
   function renderItems() {
     TF.$('parsedItemsBody').innerHTML = parsedItems.map((item, index) => {
-      const product = TF.state.productByCode.get(String(item.sku).toUpperCase());
-      const category = product ? TF.state.categoryById.get(product.category_id) : null;
-      const sizeField = product?.requires_size
-        ? `<select data-field="size" data-index="${index}"><option value="">Select</option>${(product.allowed_sizes || []).map((size) => `<option value="${TF.esc(size)}" ${String(size) === String(item.size) ? 'selected' : ''}>${TF.esc(size)}</option>`).join('')}</select>`
-        : `<input data-field="size" data-index="${index}" value="${TF.esc(item.size || '')}" placeholder="—">`;
+      const category = TF.state.categoryById.get(item.category_id);
       return `<tr>
-        <td>${TF.esc(category?.name || item.category || 'Unknown')}</td>
-        <td><input data-field="sku" data-index="${index}" value="${TF.esc(item.sku)}" list="skuList"></td>
-        <td>${sizeField}</td>
-        <td><input data-field="quantity" data-index="${index}" type="number" min="1" step="1" value="${TF.num(item.quantity)}"><small>${unitLabel(category?.code, TF.num(item.quantity))}</small></td>
+        <td><select data-field="category_id" data-index="${index}"><option value="">Select category</option>${categoryOptions(item.category_id)}</select></td>
+        <td><input data-field="quantity" data-index="${index}" type="number" min="1" step="1" value="${TF.num(item.quantity)}"><small>${unitLabel(category?.code || item.category_code, TF.num(item.quantity))}</small></td>
         <td><input data-field="unit_price" data-index="${index}" type="number" min="0" step="0.01" value="${TF.num(item.unit_price).toFixed(2)}"></td>
         <td><strong>${TF.money(TF.num(item.quantity) * TF.num(item.unit_price))}</strong></td>
         <td><button class="btn danger small" data-remove="${index}">Remove</button></td>
       </tr>`;
-    }).join('') || '<tr><td colspan="7" class="empty">Paste an order form or add an item.</td></tr>';
+    }).join('') || '<tr><td colspan="5" class="empty">Paste an order form or add a category.</td></tr>';
     updateTotals();
   }
 
@@ -136,18 +194,17 @@
     let value = event.target.value;
     if (['quantity', 'unit_price'].includes(field)) value = Number(value || 0);
     parsedItems[index][field] = value;
-    if (field === 'sku') {
-      const product = TF.state.productByCode.get(String(value).toUpperCase());
-      if (product) {
-        const category = TF.state.categoryById.get(product.category_id);
-        Object.assign(parsedItems[index], {
-          sku: product.code,
-          category: category?.name || '',
-          category_code: category?.code || '',
-          name: product.name
-        });
-        if (!parsedItems[index].unit_price) parsedItems[index].unit_price = Number(product.default_sell_price || 0);
-      }
+    if (field === 'category_id') {
+      const category = TF.state.categoryById.get(value);
+      const product = representativeProduct(value);
+      Object.assign(parsedItems[index], {
+        category_id: value,
+        category_code: category?.code || '',
+        category: category?.name || '',
+        sku: product?.code || '',
+        name: category?.name || ''
+      });
+      if (!parsedItems[index].unit_price) parsedItems[index].unit_price = Number(product?.default_sell_price || 0);
     }
     renderItems();
   }
@@ -179,7 +236,7 @@
     TF.$('orderProductTotal').textContent = TF.money(products);
     TF.$('orderShippingTotal').textContent = TF.money(shipping);
     TF.$('orderExpectedTotal').textContent = TF.money(expected);
-    TF.$('parsedSummary').textContent = `${parsedItems.length} lines • ${parsedItems.reduce((sum, item) => sum + TF.num(item.quantity), 0)} pieces • ${TF.money(products)}`;
+    TF.$('parsedSummary').textContent = `${parsedItems.length} categories • ${parsedItems.reduce((sum, item) => sum + TF.num(item.quantity), 0)} pieces • ${TF.money(products)}`;
     if (syncPayment) {
       const current = TF.num(TF.$('paymentAmount').value);
       if (!current || Math.abs(current - lastExpected) < 0.02) TF.$('paymentAmount').value = expected.toFixed(2);
@@ -201,12 +258,17 @@
   }
 
   function validateItems() {
-    if (!parsedItems.length) throw new Error('Add at least one product.');
+    if (!parsedItems.length) throw new Error('Add at least one category.');
     for (const item of parsedItems) {
-      const product = TF.state.productByCode.get(String(item.sku).toUpperCase());
-      if (!product) throw new Error(`Unknown SKU: ${item.sku}`);
-      if (TF.num(item.quantity) <= 0) throw new Error(`Invalid quantity for ${item.sku}`);
-      if (product.requires_size && !(product.allowed_sizes || []).includes(String(item.size).toUpperCase())) throw new Error(`${item.sku} needs a valid size.`);
+      const category = TF.state.categoryById.get(item.category_id);
+      const product = representativeProduct(item.category_id, item.sku);
+      if (!category) throw new Error('Select a valid category.');
+      if (!product) throw new Error(`${category.name} is not configured for order saving.`);
+      item.sku = product.code;
+      item.category = category.name;
+      item.category_code = category.code;
+      if (TF.num(item.quantity) <= 0) throw new Error(`Invalid quantity for ${category.name}`);
+      if (TF.num(item.unit_price) < 0) throw new Error(`Invalid unit price for ${category.name}`);
     }
     if (!TF.$('orderCustomer').value.trim()) throw new Error('Customer name is required.');
     if (TF.$('orderType').value === 'made_to_order' && !TF.$('expectedReleaseDate').value) throw new Error('Made-to-order needs an expected release date.');
@@ -315,13 +377,14 @@
     const result = await TF.state.supa.from('order_items').select('*').eq('order_id', order.id).order('line_number');
     if (result.error) throw result.error;
     editingOrderId = order.id;
-    parsedItems = (result.data || []).filter((item) => !item.is_system_included).map((item) => ({
-      sku: item.sku,
-      size: item.size || '',
-      quantity: TF.num(item.quantity),
-      unit_price: TF.num(item.unit_price),
-      name: item.product_name || item.sku,
-      category: ''
+    parsedItems = summarizeStoredItems((result.data || []).filter((item) => !item.is_system_included)).map((item) => ({
+      category_id: item.category_id,
+      category_code: item.category_code,
+      category: item.category,
+      sku: representativeProduct(item.category_id, item.sku)?.code || item.sku,
+      quantity: item.quantity,
+      unit_price: item.unit_price,
+      name: item.category
     }));
     TF.$('orderPaste').value = order.raw_order_form || '';
     TF.$('orderCustomer').value = order.customer_name || '';
@@ -442,7 +505,7 @@
   }
 
   function itemText(items) {
-    return items.map((item) => `${item.sku}${item.size ? ` (Size: ${item.size})` : ''} ×${item.quantity}`).join('\n');
+    return summarizeStoredItems(items).map((item) => `${item.category} ×${item.quantity} — ${TF.money(item.line_total)}`).join('\n');
   }
 
   function customerUpdate(order) {
@@ -466,7 +529,7 @@
     ]);
     if (itemsResult.error || activityResult.error) throw itemsResult.error || activityResult.error;
     activeOrder = order;
-    activeItems = itemsResult.data || [];
+    activeItems = summarizeStoredItems(itemsResult.data || []);
     TF.$('detailTitle').textContent = `${order.order_number} — ${order.customer_name}`;
     TF.$('detailStatus').innerHTML = `${TF.statusPill(order.payment_status)} ${TF.statusPill(order.status)}`;
     TF.$('detailCustomer').textContent = order.customer_name || '—';
@@ -478,7 +541,7 @@
     TF.$('detailPaid').textContent = TF.money(order.verified_total_paid);
     TF.$('detailAccount').textContent = order.latest_payment_account_name || '—';
     TF.$('detailTracking').textContent = order.tracking_number || 'Not available';
-    TF.$('detailItems').innerHTML = activeItems.map((item) => `<div class="simple-line"><strong>${TF.esc(item.sku)}</strong><span>${item.size ? `Size ${TF.esc(item.size)} • ` : ''}${TF.num(item.quantity)} pcs • ${TF.money(item.line_total)}</span></div>`).join('') || '<div class="empty">No items.</div>';
+    TF.$('detailItems').innerHTML = activeItems.map((item) => `<div class="simple-line"><strong>${TF.esc(item.category)}</strong><span>${TF.num(item.quantity)} ${unitLabel(item.category_code, TF.num(item.quantity))} • ${TF.money(item.line_total)}</span></div>`).join('') || '<div class="empty">No items.</div>';
     const balance = Math.max(TF.num(order.remaining_balance), 0);
     TF.$('detailBalance').textContent = `Balance ${TF.money(balance)}`;
     TF.$('addPaymentSection').classList.toggle('hidden', !TF.can('confirm_payments') || balance <= 0 || ['cancelled', 'refunded'].includes(order.status));
@@ -618,7 +681,7 @@
     renderItems();
     updateConditions();
     TF.$('parseOrderBtn').addEventListener('click', parseOrder);
-    TF.$('addItemBtn').addEventListener('click', () => { parsedItems.push({ category: '', sku: '', size: '', quantity: 1, unit_price: 0, name: '' }); renderItems(); });
+    TF.$('addItemBtn').addEventListener('click', () => { parsedItems.push({ category_id: '', category_code: '', category: '', sku: '', quantity: 1, unit_price: 0, name: '' }); renderItems(); });
     TF.$('parsedItemsBody').addEventListener('input', editItem);
     TF.$('parsedItemsBody').addEventListener('change', editItem);
     TF.$('parsedItemsBody').addEventListener('click', (event) => {
