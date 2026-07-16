@@ -2,120 +2,212 @@
   'use strict';
   const TF = window.TwoFly;
   let orders = [];
+  let payments = [];
+  let allocations = [];
+  let items = [];
 
-  function monthRange(month) {
-    const [year, monthNumber] = month.split('-').map(Number);
-    const next = new Date(Date.UTC(year, monthNumber, 1));
-    return {
-      start: `${month}-01`,
-      end: `${next.getUTCFullYear()}-${String(next.getUTCMonth() + 1).padStart(2, '0')}-01`
-    };
+  function statusGroup(order) {
+    if (['cancelled', 'refunded'].includes(order.status)) return 'cancelled';
+    if (order.status === 'delivered') return 'delivered';
+    if (order.status === 'shipped') return 'shipped';
+    if (['draft', 'payment_review'].includes(order.status)) return 'pending';
+    return 'processing';
   }
 
-  function renderUrgent(rows) {
-    const paidLate = rows.filter((order) => order.paid_not_shipped_alert);
-    const missingTracking = rows.filter((order) => order.missing_tracking);
-    const waiting = rows.filter((order) => order.status === 'waiting_stock');
-    const ready = rows.filter((order) => order.status === 'ready_to_ship');
-    const needsPacking = rows.filter((order) => ['confirmed', 'ready_to_pack', 'packing'].includes(order.status));
-    const stockReady = rows.filter((order) => order.status === 'waiting_stock' && TF.num(order.shortage_quantity) === 0);
-    const tasks = [
-      { count: paidLate.length, label: 'Paid orders have not been shipped on time', href: './orderpage.html?filter=paid_late', tone: 'danger' },
-      { count: missingTracking.length, label: 'Shipped orders are missing tracking numbers', href: './tracking.html?filter=missing_tracking', tone: 'danger' },
-      { count: stockReady.length, label: 'Waiting orders now have enough stock', href: './orderpage.html?filter=waiting_stock', tone: 'info' },
-      { count: waiting.filter((order) => TF.num(order.shortage_quantity) > 0).length, label: 'Paid orders are waiting for stock', href: './orderpage.html?filter=waiting_stock', tone: 'warn' },
-      { count: needsPacking.length, label: 'Paid orders need packing', href: './orderpage.html?filter=packing', tone: 'warn' },
-      { count: ready.length, label: 'Orders are ready to ship', href: './tracking.html?filter=ready_to_ship', tone: 'info' }
-    ].filter((task) => task.count > 0);
-
-    TF.$('urgentTasks').innerHTML = tasks.map((task) => `
-      <a class="list-row task-row ${task.tone}" href="${task.href}">
-        <div><strong>${task.count}</strong><span>${TF.esc(task.label)}</span></div><b>Open →</b>
-      </a>`).join('') || '<div class="empty ok-empty">No urgent order issues right now.</div>';
+  function filteredByStatus(rows) {
+    const value = TF.$('dashboardStatus').value;
+    return value === 'all' ? rows : rows.filter((order) => statusGroup(order) === value);
   }
 
-  function renderMonthProgress(rows) {
-    const total = rows.length;
-    const pieces = rows.reduce((sum, order) => sum + TF.num(order.total_quantity), 0);
-    const paid = rows.filter((order) => ['paid', 'overpaid'].includes(order.payment_status)).length;
-    const shipped = rows.filter((order) => ['shipped', 'delivered'].includes(order.status)).length;
-    const delivered = rows.filter((order) => order.status === 'delivered').length;
-    const verified = rows.reduce((sum, order) => sum + TF.num(order.verified_total_paid), 0);
-    TF.$('monthProgress').innerHTML = [
-      ['Orders entered', total.toLocaleString()],
-      ['Pieces recorded', pieces.toLocaleString()],
-      ['Fully paid', paid.toLocaleString()],
-      ['Shipped', shipped.toLocaleString()],
-      ['Delivered', delivered.toLocaleString()],
-      ['Verified payments', TF.money(verified)]
-    ].map(([label, value]) => `<div class="summary-box"><span>${label}</span><strong>${value}</strong></div>`).join('');
+  function selectedRange() {
+    const preset = TF.$('dashboardPreset').value;
+    if (preset === 'custom') return { start: TF.$('dashboardStart').value, end: TF.$('dashboardEnd').value };
+    return TF.presetRange(preset);
   }
 
-  function renderWaiting(rows) {
-    const waiting = rows.filter((order) => order.status === 'waiting_stock').slice(0, 12);
-    TF.$('waitingStockTable').innerHTML = `
-      <table><thead><tr><th>Order</th><th>Customer</th><th>Pieces</th><th>Short</th><th>Paid</th></tr></thead>
-      <tbody>${waiting.map((order) => `<tr>
-        <td><a href="./orderpage.html?open=${order.id}"><strong>${TF.esc(order.order_number)}</strong></a><br><small>${TF.formatDate(order.order_date)}</small></td>
-        <td>${TF.esc(order.customer_name)}<br><small>${TF.esc(order.phone || '')}</small></td>
-        <td>${TF.num(order.total_quantity)}</td>
-        <td>${TF.num(order.shortage_quantity) > 0 ? `<span class="pill danger">${TF.num(order.shortage_quantity)} short</span>` : '<span class="pill ok">Ready now</span>'}</td>
-        <td>${TF.money(order.verified_total_paid)}<br><small>${TF.esc(order.latest_payment_account_name || 'No account')}</small></td>
-      </tr>`).join('') || '<tr><td colspan="5" class="empty">No waiting-for-stock orders.</td></tr>'}</tbody></table>`;
+  function orderDateForBasis(order, basis) {
+    if (basis === 'order') return order.order_date;
+    if (basis === 'shipped') return order.shipped_at;
+    if (basis === 'delivered') return order.delivered_at;
+    return '';
   }
 
-  function renderLowStock(rows) {
-    const low = rows.filter((row) => row.is_low_stock).sort((a, b) => TF.num(a.total_available) - TF.num(b.total_available));
-    TF.$('lowStockList').innerHTML = low.map((row) => `
-      <div class="list-row"><div><strong>${TF.esc(row.category_name)}</strong><span>${TF.num(row.total_available).toLocaleString()} available • alert at ${TF.num(row.low_stock_level)}</span></div>${TF.statusPill('waiting_stock')}</div>
-    `).join('') || '<div class="empty ok-empty">No category is below its low-stock level.</div>';
+  function buildSelection() {
+    const basis = TF.$('dashboardDateBasis').value;
+    const { start, end } = selectedRange();
+    const verifiedPayments = payments.filter((payment) => payment.status === 'verified');
+    const paymentIdsInRange = new Set(verifiedPayments.filter((payment) => TF.dateInRange(payment.payment_date, start, end)).map((payment) => payment.id));
+    const orderIdsPaidInRange = new Set(verifiedPayments.filter((payment) => paymentIdsInRange.has(payment.id)).map((payment) => payment.order_id));
+
+    let selectedOrders = basis === 'payment'
+      ? orders.filter((order) => orderIdsPaidInRange.has(order.id))
+      : orders.filter((order) => TF.dateInRange(orderDateForBasis(order, basis), start, end));
+    selectedOrders = filteredByStatus(selectedOrders);
+    const orderIds = new Set(selectedOrders.map((order) => order.id));
+
+    const selectedPayments = basis === 'payment'
+      ? verifiedPayments.filter((payment) => paymentIdsInRange.has(payment.id) && orderIds.has(payment.order_id))
+      : verifiedPayments.filter((payment) => orderIds.has(payment.order_id));
+    const selectedPaymentIds = new Set(selectedPayments.map((payment) => payment.id));
+    const selectedAllocations = allocations.filter((allocation) => selectedPaymentIds.has(allocation.payment_id));
+    const selectedItems = items.filter((item) => orderIds.has(item.order_id));
+
+    return { basis, start, end, selectedOrders, selectedPayments, selectedAllocations, selectedItems };
   }
 
-  function renderRecent(rows) {
-    const recent = [...rows].sort((a, b) => String(b.created_at).localeCompare(String(a.created_at))).slice(0, 20);
-    TF.$('recentOrders').innerHTML = `
-      <table><thead><tr><th>Order</th><th>Customer</th><th>Payment</th><th>Order status</th><th>Tracking</th><th>Last update</th></tr></thead>
-      <tbody>${recent.map((order) => `<tr>
-        <td><a href="./orderpage.html?open=${order.id}"><strong>${TF.esc(order.order_number)}</strong></a><br><small>${TF.formatDate(order.order_date)}</small></td>
-        <td>${TF.esc(order.customer_name)}<br><small>${TF.esc(order.phone || '')}</small></td>
-        <td>${TF.statusPill(order.payment_status)}<br><small>${TF.esc(order.latest_payment_account_name || '')}</small></td>
-        <td>${TF.statusPill(order.status)}</td>
-        <td>${order.tracking_number ? `<code>${TF.esc(order.tracking_number)}</code>` : '<span class="muted">Not available</span>'}</td>
-        <td>${TF.formatDateTime(order.last_activity_at)}</td>
-      </tr>`).join('') || '<tr><td colspan="6" class="empty">No orders entered yet.</td></tr>'}</tbody></table>`;
+  function renderKpis(selection) {
+    const cash = selection.selectedPayments.reduce((sum, payment) => sum + TF.num(payment.amount), 0);
+    const product = selection.selectedAllocations.filter((row) => row.allocation_type === 'product').reduce((sum, row) => sum + TF.num(row.amount), 0);
+    const shipping = selection.selectedAllocations.filter((row) => row.allocation_type === 'jnt_shipping').reduce((sum, row) => sum + TF.num(row.amount), 0);
+    const pieces = selection.selectedOrders.reduce((sum, order) => sum + TF.num(order.total_quantity), 0);
+    const count = selection.selectedOrders.length;
+    TF.$('kpiCash').textContent = TF.money(cash);
+    TF.$('kpiProductSales').textContent = TF.money(product);
+    TF.$('kpiShipping').textContent = TF.money(shipping);
+    TF.$('kpiOrders').textContent = count.toLocaleString();
+    TF.$('kpiPieces').textContent = pieces.toLocaleString();
+    TF.$('kpiAverage').textContent = TF.money(count ? cash / count : 0);
+  }
+
+  function groupDateForRecord(selection, order, payment) {
+    if (selection.basis === 'payment') return payment?.payment_date || '';
+    return TF.isoDate(orderDateForBasis(order, selection.basis));
+  }
+
+  function renderSalesByDay(selection) {
+    const byDay = new Map();
+    const orderMap = new Map(selection.selectedOrders.map((order) => [order.id, order]));
+    const paymentMap = new Map(selection.selectedPayments.map((payment) => [payment.id, payment]));
+
+    if (selection.basis === 'payment') {
+      selection.selectedPayments.forEach((payment) => {
+        const date = payment.payment_date;
+        if (!byDay.has(date)) byDay.set(date, { date, orderIds: new Set(), pieces: 0, product: 0, shipping: 0, cash: 0 });
+        const row = byDay.get(date);
+        row.orderIds.add(payment.order_id);
+        row.cash += TF.num(payment.amount);
+      });
+      selection.selectedAllocations.forEach((allocation) => {
+        const payment = paymentMap.get(allocation.payment_id);
+        if (!payment || !byDay.has(payment.payment_date)) return;
+        const row = byDay.get(payment.payment_date);
+        if (allocation.allocation_type === 'product') row.product += TF.num(allocation.amount);
+        if (allocation.allocation_type === 'jnt_shipping') row.shipping += TF.num(allocation.amount);
+      });
+      byDay.forEach((row) => {
+        row.pieces = [...row.orderIds].reduce((sum, id) => sum + TF.num(orderMap.get(id)?.total_quantity), 0);
+      });
+    } else {
+      selection.selectedOrders.forEach((order) => {
+        const date = groupDateForRecord(selection, order);
+        if (!date) return;
+        if (!byDay.has(date)) byDay.set(date, { date, orderIds: new Set(), pieces: 0, product: 0, shipping: 0, cash: 0 });
+        const row = byDay.get(date);
+        row.orderIds.add(order.id);
+        row.pieces += TF.num(order.total_quantity);
+      });
+      const dayByOrder = new Map();
+      byDay.forEach((row, date) => row.orderIds.forEach((id) => dayByOrder.set(id, date)));
+      selection.selectedPayments.forEach((payment) => {
+        const date = dayByOrder.get(payment.order_id);
+        if (date) byDay.get(date).cash += TF.num(payment.amount);
+      });
+      selection.selectedAllocations.forEach((allocation) => {
+        const date = dayByOrder.get(allocation.order_id);
+        if (!date) return;
+        if (allocation.allocation_type === 'product') byDay.get(date).product += TF.num(allocation.amount);
+        if (allocation.allocation_type === 'jnt_shipping') byDay.get(date).shipping += TF.num(allocation.amount);
+      });
+    }
+
+    const rows = [...byDay.values()].sort((a, b) => b.date.localeCompare(a.date));
+    TF.$('salesByDayTable').innerHTML = `<table><thead><tr><th>Date</th><th>Orders</th><th>Pieces</th><th>Product Sales</th><th>Shipping</th><th>Cash</th></tr></thead><tbody>${rows.map((row) => `<tr><td><strong>${TF.formatDate(row.date)}</strong></td><td>${row.orderIds.size}</td><td>${row.pieces.toLocaleString()}</td><td>${TF.money(row.product)}</td><td>${TF.money(row.shipping)}</td><td><strong>${TF.money(row.cash)}</strong></td></tr>`).join('') || '<tr><td colspan="6" class="empty">No records in this period.</td></tr>'}</tbody></table>`;
+  }
+
+  function renderStatus(selection) {
+    const groups = [
+      ['pending', 'Pending'], ['processing', 'Processing'], ['shipped', 'Shipped'], ['delivered', 'Delivered'], ['cancelled', 'Cancelled']
+    ];
+    const total = Math.max(selection.selectedOrders.length, 1);
+    TF.$('statusBreakdown').innerHTML = groups.map(([key, label]) => {
+      const count = selection.selectedOrders.filter((order) => statusGroup(order) === key).length;
+      const percent = Math.round((count / total) * 100);
+      const params = new URLSearchParams({ filter: key, basis: selection.basis, preset: 'custom', start: selection.start || '', end: selection.end || '' });
+      return `<a class="status-break-row" href="./orderpage.html?${params.toString()}"><div><strong>${label}</strong><span>${count.toLocaleString()}</span></div><div class="progress"><i style="width:${percent}%"></i></div></a>`;
+    }).join('');
+  }
+
+  function renderAccounts(selection) {
+    const totals = new Map();
+    selection.selectedPayments.forEach((payment) => {
+      const name = payment.cash_accounts?.name || 'Unknown account';
+      const current = totals.get(name) || { count: 0, amount: 0 };
+      current.count += 1;
+      current.amount += TF.num(payment.amount);
+      totals.set(name, current);
+    });
+    const rows = [...totals.entries()].sort((a, b) => b[1].amount - a[1].amount);
+    TF.$('paymentsByAccount').innerHTML = `<table><thead><tr><th>Account</th><th>Payments</th><th>Total</th></tr></thead><tbody>${rows.map(([name, row]) => `<tr><td><strong>${TF.esc(name)}</strong></td><td>${row.count}</td><td><strong>${TF.money(row.amount)}</strong></td></tr>`).join('') || '<tr><td colspan="3" class="empty">No verified payments in this period.</td></tr>'}</tbody></table>`;
+  }
+
+  function renderCategories(selection) {
+    const totals = new Map();
+    selection.selectedItems.forEach((item) => {
+      const category = TF.state.categoryById.get(item.category_id);
+      const name = category?.name || 'Unknown category';
+      const current = totals.get(name) || { pieces: 0, amount: 0 };
+      current.pieces += TF.num(item.quantity);
+      current.amount += TF.num(item.line_total);
+      totals.set(name, current);
+    });
+    const rows = [...totals.entries()].sort((a, b) => b[1].pieces - a[1].pieces);
+    TF.$('categoryBreakdown').innerHTML = `<table><thead><tr><th>Category</th><th>Pieces</th><th>Order Value</th></tr></thead><tbody>${rows.map(([name, row]) => `<tr><td><strong>${TF.esc(name)}</strong></td><td>${row.pieces.toLocaleString()}</td><td>${TF.money(row.amount)}</td></tr>`).join('') || '<tr><td colspan="3" class="empty">No category records in this period.</td></tr>'}</tbody></table>`;
+  }
+
+  function updateFilterUi() {
+    const custom = TF.$('dashboardPreset').value === 'custom';
+    TF.$('dashboardStartWrap').classList.toggle('hidden', !custom);
+    TF.$('dashboardEndWrap').classList.toggle('hidden', !custom);
+  }
+
+  function render() {
+    const selection = buildSelection();
+    const basisLabels = { order: 'Order Date', payment: 'Payment Date', shipped: 'Shipped Date', delivered: 'Delivered Date' };
+    const rangeText = selection.start || selection.end ? `${TF.formatDate(selection.start)} to ${TF.formatDate(selection.end)}` : 'All dates';
+    TF.$('dashboardBasisNote').textContent = `Based on ${basisLabels[selection.basis]} • ${rangeText}`;
+    TF.$('salesByDayNote').textContent = `Grouped by ${basisLabels[selection.basis]}.`;
+    renderKpis(selection);
+    renderSalesByDay(selection);
+    renderStatus(selection);
+    renderAccounts(selection);
+    renderCategories(selection);
   }
 
   async function load() {
-    try {
-      const month = TF.$('dashboardMonth').value || TF.monthKey();
-      const range = monthRange(month);
-      const [ordersResult, inventoryResult] = await Promise.all([
-        TF.state.supa.from('v_daily_ops_orders_v14').select('*').gte('order_date', range.start).lt('order_date', range.end).order('created_at', { ascending: false }).limit(3000),
-        TF.state.supa.from('v_daily_inventory_v14').select('*').order('category_name')
-      ]);
-      if (ordersResult.error || inventoryResult.error) throw ordersResult.error || inventoryResult.error;
-      orders = ordersResult.data || [];
-      const currentDate = TF.today();
-      TF.$('kpiOrdersToday').textContent = orders.filter((order) => order.order_date === currentDate).length;
-      TF.$('kpiAwaiting').textContent = orders.filter((order) => ['unpaid', 'partial'].includes(order.payment_status) && !['cancelled', 'refunded'].includes(order.status)).length;
-      TF.$('kpiPacking').textContent = orders.filter((order) => ['confirmed', 'ready_to_pack', 'packing'].includes(order.status)).length;
-      TF.$('kpiWaitingStock').textContent = orders.filter((order) => order.status === 'waiting_stock').length;
-      TF.$('kpiMissingTracking').textContent = orders.filter((order) => order.missing_tracking).length;
-      TF.$('kpiReadyToShip').textContent = orders.filter((order) => order.status === 'ready_to_ship').length;
-      renderUrgent(orders);
-      renderMonthProgress(orders);
-      renderWaiting(orders);
-      renderLowStock(inventoryResult.data || []);
-      renderRecent(orders);
-    } catch (error) {
-      TF.fail(error, 'Dashboard failed');
-    }
+    const [ordersResult, paymentsResult, allocationsResult, itemsResult] = await Promise.all([
+      TF.state.supa.from('v_daily_ops_orders_v15').select('*').order('order_date', { ascending: false }).limit(10000),
+      TF.state.supa.from('payments').select('id,order_id,payment_date,amount,status,cash_account_id,cash_accounts(name)').order('payment_date', { ascending: false }).limit(20000),
+      TF.state.supa.from('payment_allocations').select('payment_id,order_id,allocation_type,amount').limit(50000),
+      TF.state.supa.from('order_items').select('order_id,category_id,quantity,line_total').limit(50000)
+    ]);
+    const error = ordersResult.error || paymentsResult.error || allocationsResult.error || itemsResult.error;
+    if (error) throw error;
+    orders = ordersResult.data || [];
+    payments = paymentsResult.data || [];
+    allocations = allocationsResult.data || [];
+    items = itemsResult.data || [];
+    render();
   }
 
-  TF.ready.then(() => {
-    TF.$('dashboardMonth').value = TF.monthKey();
-    TF.$('dashboardMonth').addEventListener('change', load);
-    window.addEventListener('twofly:refresh', load);
-    load();
+  TF.ready.then(async () => {
+    updateFilterUi();
+    TF.$('dashboardPreset').addEventListener('change', () => { updateFilterUi(); if (TF.$('dashboardPreset').value !== 'custom') render(); });
+    TF.$('dashboardDateBasis').addEventListener('change', render);
+    TF.$('dashboardStatus').addEventListener('change', render);
+    TF.$('dashboardStart').addEventListener('change', render);
+    TF.$('dashboardEnd').addEventListener('change', render);
+    TF.$('applyDashboardFilter').addEventListener('click', render);
+    window.addEventListener('twofly:refresh', () => load().catch((error) => TF.fail(error, 'Dashboard failed')));
+    await load();
   }).catch((error) => TF.fail(error, 'Dashboard failed'));
 })();

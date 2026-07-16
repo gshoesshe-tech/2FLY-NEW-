@@ -1,86 +1,23 @@
-2FLY DAILY OPERATIONS — TEST CHECKLIST
-=======================================
+2FLY DASHBOARD + TO DO UPDATE — TEST CHECKLIST
 
-DATABASE
---------
-[ ] SQL result says: 2FLY FRESH DAILY OPERATIONS SETUP COMPLETE
-[ ] 141 products were imported
-[ ] Opening inventory total is 17,699
-[ ] 6 payment accounts were imported
-[ ] Old Supabase project is still unchanged
-
-LOGIN
------
-[ ] gshoes@gmail.com can sign in
-[ ] gshoes@gmail.com shows OWNER
-[ ] A staff account can sign in
-[ ] Staff permissions can be changed in Settings
-
-ORDER CREATION
---------------
-[ ] Paste a real order form
-[ ] Customer details are parsed
-[ ] SKUs and quantities are parsed
-[ ] Total is correct
-[ ] Save as Awaiting Payment works
-[ ] Save & Confirm Payment works
-[ ] Receiving GCash account can be selected
-[ ] Duplicate warning appears for a repeated order
-
-PAYMENTS
---------
-[ ] Full payment changes payment status to Paid
-[ ] Partial payment changes payment status to Partially Paid
-[ ] Additional payment can be confirmed
-[ ] Payment account appears in the order
-[ ] Daily Summary shows the payment under the correct account
-[ ] Reusing the same nonblank GCash reference is blocked
-
-INVENTORY
----------
-[ ] Fully paid order reserves stock
-[ ] Waiting-for-stock status appears when stock is short
-[ ] Packing keeps stock reserved
-[ ] Ready to Ship keeps stock reserved
-[ ] Mark Shipped deducts stock once
-[ ] Reopening a shipped order does not deduct twice
-[ ] Cancelling an order returns the stock
-[ ] Receive Stock adds stock
-[ ] Physical Count adjusts stock with a required reason
-[ ] Low-stock setting and alert work
-
-TRACKING
---------
-[ ] Tracking page searches by customer name
-[ ] Tracking page searches by phone
-[ ] Tracking page searches by order number
-[ ] Tracking page searches by tracking number
-[ ] Courier can be edited
-[ ] Tracking number can be added or edited
-[ ] Actual shipped date can be entered
-[ ] Delivered date can be entered
-[ ] Missing-tracking alert appears for shipped orders without tracking
-[ ] Customer update message can be copied
-
-DASHBOARD
----------
-[ ] Awaiting payment count is correct
-[ ] Waiting-for-stock count is correct
-[ ] Ready-to-ship count is correct
-[ ] Missing-tracking count is correct
-[ ] Paid-but-not-shipped alert works
-[ ] Low-stock alerts work
-
-ACTIVITY
---------
-[ ] Order creation appears in activity history
-[ ] Payment confirmation appears in activity history
-[ ] Status changes appear in activity history
-[ ] Tracking changes appear in activity history
-[ ] Staff member name appears in activity history
-
-FINAL
------
-[ ] Test order was cancelled after testing
-[ ] Test stock returned correctly
-[ ] First real July order was entered using its actual dates
+[ ] Dashboard loads without an error.
+[ ] Dashboard Last 7 Days numbers appear.
+[ ] Switch Dashboard basis between Order Date and Payment Date.
+[ ] Try a Custom Range.
+[ ] Payments by Account shows the correct GCash account names.
+[ ] To Do appears in the sidebar on all pages.
+[ ] To Do counts match the current order statuses.
+[ ] Start Packing from To Do works for a fully paid order.
+[ ] Ready to Ship from To Do works for a Packing order.
+[ ] Missing Tracking appears for a shipped order without tracking.
+[ ] Orders can filter by Order Date.
+[ ] Orders can filter by Payment Date.
+[ ] Orders can filter by Shipped Date.
+[ ] Orders can filter by a custom specific date.
+[ ] Orders can sort Oldest Order First.
+[ ] Save a filter, refresh, and apply the saved filter.
+[ ] Select multiple orders and test Set Courier.
+[ ] Bulk actions do not bypass payment or inventory rules.
+[ ] Facebook buttons still open the customer profile.
+[ ] Existing payment confirmation still allows selecting Monaliza/Myra/Lorna.
+[ ] Existing tracking and customer update tools still work.

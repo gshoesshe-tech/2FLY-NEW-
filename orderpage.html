@@ -87,8 +87,32 @@
 
       <article class="card">
         <div class="card-head filters-head">
-          <div><h3>All orders</h3><p>Search and update payment, stock, status, and tracking.</p></div>
-          <div class="filter-row"><input id="orderSearch" placeholder="Search customer, phone, Facebook, order or tracking"><select id="orderFilter"><option value="all">All orders</option><option value="today">Entered today</option><option value="awaiting">Awaiting / Partial payment</option><option value="paid">Paid</option><option value="waiting_stock">Waiting for Stock</option><option value="packing">Needs Packing</option><option value="ready_to_ship">Ready to Ship</option><option value="shipped">Shipped</option><option value="missing_tracking">Missing Tracking</option><option value="paid_late">Paid but not shipped</option><option value="delivered">Delivered</option><option value="cancelled">Cancelled</option></select></div>
+          <div><h3>All orders</h3><p>Filter by the exact order, payment, shipped, or delivered date.</p></div>
+          <span id="orderResultCount" class="pill">0 orders</span>
+        </div>
+        <div class="card-body order-filter-panel">
+          <label class="filter-search-wide">Search<input id="orderSearch" placeholder="Customer, phone, Facebook, order or tracking"></label>
+          <label>Date basis<select id="orderDateBasis"><option value="order">Order Date</option><option value="payment">Payment Date</option><option value="shipped">Shipped Date</option><option value="delivered">Delivered Date</option></select></label>
+          <label>Date range<select id="orderDatePreset"><option value="all">All Dates</option><option value="today">Today</option><option value="yesterday">Yesterday</option><option value="last7">Last 7 Days</option><option value="this_week">This Week</option><option value="this_month">This Month</option><option value="custom">Custom Range</option></select></label>
+          <label id="orderStartWrap" class="hidden">Start date<input id="orderStartDate" type="date"></label>
+          <label id="orderEndWrap" class="hidden">End date<input id="orderEndDate" type="date"></label>
+          <label>Status / task<select id="orderFilter"><option value="all">All Orders</option><option value="pending">Pending</option><option value="processing">Processing</option><option value="awaiting">Awaiting / Partial Payment</option><option value="paid">Fully Paid</option><option value="waiting_stock">Waiting for Stock</option><option value="packing">Needs Packing</option><option value="ready_to_ship">Ready to Ship</option><option value="shipped">Shipped</option><option value="missing_tracking">Missing Tracking</option><option value="paid_late">Paid but Not Shipped</option><option value="delivered">Delivered</option><option value="cancelled">Cancelled / Refunded</option></select></label>
+          <label>Fulfillment<select id="orderFulfillmentFilter"><option value="all">All Methods</option><option value="unselected">Not Selected</option><option value="jnt">J&amp;T</option><option value="lalamove">Lalamove</option><option value="walk_in">Walk-in / Pickup</option></select></label>
+          <label>Sort<select id="orderSort"><option value="newest_order">Newest Order First</option><option value="oldest_order">Oldest Order First</option><option value="oldest_payment">Oldest Payment First</option><option value="newest_payment">Newest Payment First</option><option value="oldest_status">Longest Waiting First</option></select></label>
+          <button id="clearOrderFilters" class="btn">Clear Filters</button>
+        </div>
+        <div class="saved-filter-bar">
+          <select id="savedFiltersSelect"><option value="">Saved filters</option></select>
+          <button id="saveCurrentFilterBtn" class="btn">Save Current Filter</button>
+          <button id="deleteSavedFilterBtn" class="btn danger">Delete Saved</button>
+          <span class="muted">Saved only on this browser.</span>
+        </div>
+        <div id="bulkOrderBar" class="bulk-order-bar hidden">
+          <strong id="bulkSelectedCount">0 selected</strong>
+          <select id="bulkOrderAction"><option value="">Choose bulk action</option><option value="packing">Start Packing</option><option value="ready_to_ship">Mark Ready to Ship</option><option value="set_courier">Set Courier</option><option value="shipped">Mark Shipped</option></select>
+          <select id="bulkCourier"><option value="jnt">J&amp;T</option><option value="lalamove">Lalamove</option><option value="walk_in">Walk-in / Pickup</option></select>
+          <button id="applyBulkOrderAction" class="btn primary">Apply</button>
+          <button id="clearBulkSelection" class="btn">Clear Selection</button>
         </div>
         <div class="table-wrap" id="ordersTable"></div>
       </article>

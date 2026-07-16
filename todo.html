@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>To Do | 2FLY Daily Ops</title>
+  <link rel="stylesheet" href="./styles.css">
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="./config.js"></script>
+  <script defer src="./common.js"></script>
+  <script defer src="./todo.js"></script>
+</head>
+<body data-page="todo" data-required-role="team">
+<div id="toast" class="toast"></div>
+<div class="app-shell">
+  <aside class="sidebar">
+    <div class="side-brand"><div class="logo small">2F</div><div><strong>2FLY Daily Ops</strong><span>Orders • Stock • Tracking</span></div></div>
+    <nav></nav>
+    <div class="side-user"><span id="userEmail">—</span><strong id="userRole">—</strong><button id="logoutBtn" class="btn ghost">Log out</button></div>
+  </aside>
+  <section class="workspace">
+    <header class="topbar">
+      <div><h2>To Do</h2><p>Automatic work queue based on the current order status.</p></div>
+      <div class="top-actions"><a class="btn primary" href="./orderpage.html">New / View Orders</a><button id="refreshBtn" class="btn">Refresh</button></div>
+    </header>
+    <main class="page">
+      <section class="todo-count-grid">
+        <button class="todo-count-card" data-task-card="payment"><span>Awaiting Payment</span><strong id="todoPaymentCount">0</strong></button>
+        <button class="todo-count-card" data-task-card="needs_packing"><span>Needs Packing</span><strong id="todoPackingCount">0</strong></button>
+        <button class="todo-count-card" data-task-card="waiting_stock"><span>Waiting for Stock</span><strong id="todoStockCount">0</strong></button>
+        <button class="todo-count-card" data-task-card="ready_to_ship"><span>Ready to Ship</span><strong id="todoReadyCount">0</strong></button>
+        <button class="todo-count-card danger" data-task-card="missing_tracking"><span>Missing Tracking</span><strong id="todoTrackingCount">0</strong></button>
+        <button class="todo-count-card danger" data-task-card="overdue"><span>Overdue</span><strong id="todoOverdueCount">0</strong></button>
+      </section>
+
+      <article class="card">
+        <div class="card-body todo-filter-grid">
+          <label>Work queue<select id="todoTaskFilter"><option value="all">All Tasks</option><option value="payment">Awaiting Payment</option><option value="needs_packing">Paid — Needs Packing</option><option value="packing">Currently Packing</option><option value="waiting_stock">Waiting for Stock</option><option value="ready_to_ship">Ready to Ship</option><option value="missing_tracking">Shipped — Missing Tracking</option><option value="overdue">Paid Too Long / Overdue</option><option value="customer_update">Customer Update Needed</option></select></label>
+          <label>Team<select id="todoTeamFilter"><option value="all">All Teams</option><option value="customer_service">Customer Service</option><option value="packing">Packing</option><option value="shipping">Shipping</option><option value="owner">Owner Review</option></select></label>
+          <label>Date basis<select id="todoDateBasis"><option value="order">Order Date</option><option value="payment">Payment Date</option><option value="status">Last Status Update</option></select></label>
+          <label>Date range<select id="todoPreset"><option value="all">All Dates</option><option value="today">Today</option><option value="yesterday">Yesterday</option><option value="last7">Last 7 Days</option><option value="this_week">This Week</option><option value="this_month">This Month</option><option value="custom">Custom Range</option></select></label>
+          <label id="todoStartWrap" class="hidden">Start date<input id="todoStart" type="date"></label>
+          <label id="todoEndWrap" class="hidden">End date<input id="todoEnd" type="date"></label>
+          <label class="todo-search">Search<input id="todoSearch" placeholder="Customer, phone, Facebook, order or tracking"></label>
+          <label>Sort<select id="todoSort"><option value="priority">Priority first</option><option value="oldest">Oldest first</option><option value="newest">Newest first</option></select></label>
+          <button id="clearTodoFilters" class="btn">Clear Filters</button>
+        </div>
+      </article>
+
+      <article class="card">
+        <div class="card-head"><div><h3>Current work queue</h3><p id="todoResultCount">0 orders need attention.</p></div></div>
+        <div class="table-wrap" id="todoTable"></div>
+      </article>
+    </main>
+  </section>
+</div>
+</body>
+</html>

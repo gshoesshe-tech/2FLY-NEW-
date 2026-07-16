@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Daily Dashboard | 2FLY</title>
+  <title>Dashboard | 2FLY Daily Ops</title>
   <link rel="stylesheet" href="./styles.css">
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="./config.js"></script>
@@ -20,45 +20,52 @@
   </aside>
   <section class="workspace">
     <header class="topbar">
-      <div><h2>Daily Dashboard</h2><p>What needs attention right now.</p></div>
-      <div class="top-actions"><label class="compact-field">Order month<input id="dashboardMonth" type="month"></label><button id="refreshBtn" class="btn">Refresh</button></div>
+      <div><h2>Dashboard</h2><p>Sales, collections, and order numbers for the selected period.</p></div>
+      <div class="top-actions"><a class="btn" href="./todo.html">Open To Do</a><button id="refreshBtn" class="btn">Refresh</button></div>
     </header>
     <main class="page">
-      <section class="kpi-grid six daily-kpis">
-        <a class="kpi clickable" href="./orderpage.html?filter=today"><span>Orders today</span><strong id="kpiOrdersToday">0</strong><small>Created today</small></a>
-        <a class="kpi clickable" href="./orderpage.html?filter=awaiting"><span>Awaiting payment</span><strong id="kpiAwaiting">0</strong><small>Unpaid or partial</small></a>
-        <a class="kpi clickable" href="./orderpage.html?filter=packing"><span>Needs packing</span><strong id="kpiPacking">0</strong><small>Paid and active</small></a>
-        <a class="kpi clickable" href="./orderpage.html?filter=waiting_stock"><span>Waiting for stock</span><strong id="kpiWaitingStock">0</strong><small>Paid but incomplete</small></a>
-        <a class="kpi clickable" href="./tracking.html?filter=missing_tracking"><span>Missing tracking</span><strong id="kpiMissingTracking">0</strong><small>Shipped without number</small></a>
-        <a class="kpi clickable" href="./tracking.html?filter=ready_to_ship"><span>Ready to ship</span><strong id="kpiReadyToShip">0</strong><small>Needs courier update</small></a>
+      <article class="card dashboard-filter-card">
+        <div class="card-body dashboard-filter-grid">
+          <label>Date basis<select id="dashboardDateBasis"><option value="order">Order Date</option><option value="payment">Payment Date</option><option value="shipped">Shipped Date</option><option value="delivered">Delivered Date</option></select></label>
+          <label>Date range<select id="dashboardPreset"><option value="today">Today</option><option value="yesterday">Yesterday</option><option value="last7" selected>Last 7 Days</option><option value="this_week">This Week</option><option value="this_month">This Month</option><option value="all">All Dates</option><option value="custom">Custom Range</option></select></label>
+          <label>Status<select id="dashboardStatus"><option value="all">All Statuses</option><option value="pending">Pending</option><option value="processing">Processing</option><option value="shipped">Shipped</option><option value="delivered">Delivered</option><option value="cancelled">Cancelled / Refunded</option></select></label>
+          <label id="dashboardStartWrap" class="hidden">Start date<input id="dashboardStart" type="date"></label>
+          <label id="dashboardEndWrap" class="hidden">End date<input id="dashboardEnd" type="date"></label>
+          <button id="applyDashboardFilter" class="btn primary">Apply</button>
+          <span id="dashboardBasisNote" class="filter-note">Based on Order Date</span>
+        </div>
+      </article>
+
+      <section class="kpi-grid six dashboard-number-grid">
+        <article class="kpi number-card cash"><span>Cash Collected</span><strong id="kpiCash">₱0</strong><small>Verified payments</small></article>
+        <article class="kpi number-card"><span>Product Sales</span><strong id="kpiProductSales">₱0</strong><small>Product payment allocations</small></article>
+        <article class="kpi number-card"><span>Shipping Fees Collected</span><strong id="kpiShipping">₱0</strong><small>Customer shipping paid</small></article>
+        <article class="kpi number-card"><span>Orders</span><strong id="kpiOrders">0</strong><small>Unique orders</small></article>
+        <article class="kpi number-card"><span>Pieces Sold</span><strong id="kpiPieces">0</strong><small>All order categories</small></article>
+        <article class="kpi number-card"><span>Average Order Value</span><strong id="kpiAverage">₱0</strong><small>Cash collected ÷ orders</small></article>
       </section>
 
-      <section class="two-col wide-left">
+      <section class="two-col wide-left dashboard-main-grid">
         <article class="card">
-          <div class="card-head"><div><h3>Urgent tasks</h3><p>These stay visible until someone updates the order.</p></div></div>
-          <div class="list" id="urgentTasks"></div>
+          <div class="card-head"><div><h3>Sales by day</h3><p id="salesByDayNote">Figures follow the selected date basis.</p></div></div>
+          <div class="table-wrap" id="salesByDayTable"></div>
         </article>
         <article class="card">
-          <div class="card-head"><div><h3>July order progress</h3><p>All orders entered with July dates are included.</p></div></div>
-          <div class="summary-grid" id="monthProgress"></div>
+          <div class="card-head"><div><h3>Status breakdown</h3><p>Current status of the selected orders.</p></div></div>
+          <div class="card-body status-breakdown" id="statusBreakdown"></div>
         </article>
       </section>
 
       <section class="two-col">
         <article class="card">
-          <div class="card-head"><div><h3>Waiting-for-stock board</h3><p>Paid orders currently blocked by unavailable stock.</p></div><a class="btn" href="./orderpage.html?filter=waiting_stock">Open all</a></div>
-          <div class="table-wrap" id="waitingStockTable"></div>
+          <div class="card-head"><div><h3>Payments by account</h3><p>Where verified customer payments entered.</p></div></div>
+          <div class="table-wrap" id="paymentsByAccount"></div>
         </article>
         <article class="card">
-          <div class="card-head"><div><h3>Low-stock alerts</h3><p>Based on current available inventory.</p></div><a class="btn" href="./inventory.html">Open inventory</a></div>
-          <div class="list" id="lowStockList"></div>
+          <div class="card-head"><div><h3>Category breakdown</h3><p>Pieces recorded by product category.</p></div></div>
+          <div class="table-wrap" id="categoryBreakdown"></div>
         </article>
       </section>
-
-      <article class="card">
-        <div class="card-head"><div><h3>Recent orders</h3><p>Quick status view for customer updates.</p></div><a class="btn primary" href="./orderpage.html">Add / view orders</a></div>
-        <div class="table-wrap" id="recentOrders"></div>
-      </article>
     </main>
   </section>
 </div>

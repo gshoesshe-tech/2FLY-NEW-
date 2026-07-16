@@ -17,6 +17,40 @@
     return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
   };
   const monthKey = () => today().slice(0, 7);
+  const isoDate = (value) => value ? String(value).slice(0, 10) : '';
+  const addDays = (dateText, days) => {
+    const base = new Date(`${isoDate(dateText)}T00:00:00`);
+    if (Number.isNaN(base.getTime())) return '';
+    base.setDate(base.getDate() + Number(days || 0));
+    return `${base.getFullYear()}-${String(base.getMonth() + 1).padStart(2, '0')}-${String(base.getDate()).padStart(2, '0')}`;
+  };
+  const daysBetween = (fromValue, toValue = today()) => {
+    const from = new Date(`${isoDate(fromValue)}T00:00:00`);
+    const to = new Date(`${isoDate(toValue)}T00:00:00`);
+    if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime())) return 0;
+    return Math.max(0, Math.floor((to - from) / 86400000));
+  };
+  const dateInRange = (value, start, end) => {
+    const date = isoDate(value);
+    if (!date) return false;
+    if (start && date < start) return false;
+    if (end && date > end) return false;
+    return true;
+  };
+  const presetRange = (preset) => {
+    const current = today();
+    const date = new Date(`${current}T00:00:00`);
+    if (preset === 'all') return { start: '', end: '' };
+    if (preset === 'today') return { start: current, end: current };
+    if (preset === 'yesterday') { const day = addDays(current, -1); return { start: day, end: day }; }
+    if (preset === 'last7') return { start: addDays(current, -6), end: current };
+    if (preset === 'this_week') {
+      const mondayOffset = (date.getDay() + 6) % 7;
+      return { start: addDays(current, -mondayOffset), end: current };
+    }
+    if (preset === 'this_month') return { start: `${current.slice(0, 7)}-01`, end: current };
+    return { start: '', end: '' };
+  };
   const formatDate = (value) => {
     if (!value) return '—';
     const raw = String(value).slice(0, 10);
@@ -173,6 +207,7 @@
     const links = [
       ['dashboard', './dashboard.html', 'Dashboard', true],
       ['orders', './orderpage.html', 'Orders', can('create_orders') || can('edit_orders') || can('confirm_payments')],
+      ['todo', './todo.html', 'To Do', true],
       ['tracking', './tracking.html', 'Tracking & Updates', can('update_tracking') || isManagement()],
       ['inventory', './inventory.html', 'Inventory', true],
       ['daily', './daily.html', 'Daily Summary', can('view_daily_summary')],
@@ -290,7 +325,7 @@
   }
 
   window.TwoFly = {
-    state, $, $$, esc, money, num, today, monthKey, formatDate, formatDateTime,
+    state, $, $$, esc, money, num, today, monthKey, isoDate, addDays, daysBetween, dateInRange, presetRange, formatDate, formatDateTime,
     normalizeCategoryLabel, sha256, toast, fail, setLoading, isManagement,
     isOwner, can, statusLabel, statusPill, accountOptions, categoryOptions,
     copyText, ready: init()

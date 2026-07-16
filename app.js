@@ -7,6 +7,9 @@
   let activeItems = [];
   let editingOrderId = null;
   let lastExpected = 0;
+  let paymentDatesByOrder = new Map();
+  const selectedOrderIds = new Set();
+  const SAVED_FILTERS_KEY = '2fly.dailyOps.orderFilters.v1';
 
   function categoryCode(item) {
     return TF.state.categoryById.get(item?.category_id)?.code || item?.category_code || '';
@@ -471,21 +474,131 @@
     }
   }
 
+  function statusGroup(order) {
+    if (['cancelled', 'refunded'].includes(order.status)) return 'cancelled';
+    if (order.status === 'delivered') return 'delivered';
+    if (order.status === 'shipped') return 'shipped';
+    if (['draft', 'payment_review'].includes(order.status)) return 'pending';
+    return 'processing';
+  }
+
+  function filterRange() {
+    const preset = TF.$('orderDatePreset').value;
+    if (preset === 'custom') return { start: TF.$('orderStartDate').value, end: TF.$('orderEndDate').value };
+    return TF.presetRange(preset);
+  }
+
+  function dateMatch(order, start, end) {
+    if (!start && !end) return true;
+    const basis = TF.$('orderDateBasis').value;
+    if (basis === 'payment') return (paymentDatesByOrder.get(order.id) || []).some((date) => TF.dateInRange(date, start, end));
+    if (basis === 'shipped') return TF.dateInRange(order.shipped_at, start, end);
+    if (basis === 'delivered') return TF.dateInRange(order.delivered_at, start, end);
+    return TF.dateInRange(order.order_date, start, end);
+  }
+
+  function filterState() {
+    return {
+      search: TF.$('orderSearch').value,
+      date_basis: TF.$('orderDateBasis').value,
+      date_preset: TF.$('orderDatePreset').value,
+      start_date: TF.$('orderStartDate').value,
+      end_date: TF.$('orderEndDate').value,
+      status: TF.$('orderFilter').value,
+      fulfillment: TF.$('orderFulfillmentFilter').value,
+      sort: TF.$('orderSort').value
+    };
+  }
+
+  function applyFilterState(state = {}) {
+    const assign = (id, value) => { if (value !== undefined && TF.$(id)) TF.$(id).value = value; };
+    assign('orderSearch', state.search || '');
+    assign('orderDateBasis', state.date_basis || 'order');
+    assign('orderDatePreset', state.date_preset || 'all');
+    assign('orderStartDate', state.start_date || '');
+    assign('orderEndDate', state.end_date || '');
+    assign('orderFilter', state.status || 'all');
+    assign('orderFulfillmentFilter', state.fulfillment || 'all');
+    assign('orderSort', state.sort || 'newest_order');
+    updateOrderDateControls();
+  }
+
+  function savedFilters() {
+    try { return JSON.parse(localStorage.getItem(SAVED_FILTERS_KEY) || '[]'); }
+    catch { return []; }
+  }
+
+  function renderSavedFilters() {
+    const filters = savedFilters();
+    TF.$('savedFiltersSelect').innerHTML = '<option value="">Saved filters</option>' + filters.map((filter, index) => `<option value="${index}">${TF.esc(filter.name)}</option>`).join('');
+  }
+
+  function saveCurrentFilter() {
+    const name = prompt('Name this filter:');
+    if (!name?.trim()) return;
+    const filters = savedFilters();
+    const existing = filters.findIndex((filter) => filter.name.toLowerCase() === name.trim().toLowerCase());
+    const record = { name: name.trim(), state: filterState() };
+    if (existing >= 0) filters[existing] = record; else filters.push(record);
+    localStorage.setItem(SAVED_FILTERS_KEY, JSON.stringify(filters.slice(-20)));
+    renderSavedFilters();
+    TF.toast('Filter saved on this browser');
+  }
+
+  function deleteSavedFilter() {
+    const value = TF.$('savedFiltersSelect').value;
+    if (value === '') return TF.toast('Choose a saved filter first', true);
+    const filters = savedFilters();
+    filters.splice(Number(value), 1);
+    localStorage.setItem(SAVED_FILTERS_KEY, JSON.stringify(filters));
+    renderSavedFilters();
+    TF.toast('Saved filter deleted');
+  }
+
+  function sortRows(rows) {
+    const sort = TF.$('orderSort').value;
+    const earliestPayment = (order) => (paymentDatesByOrder.get(order.id) || [])[0] || '';
+    const latestPayment = (order) => { const dates = paymentDatesByOrder.get(order.id) || []; return dates[dates.length - 1] || ''; };
+    return [...rows].sort((a, b) => {
+      if (sort === 'oldest_order') return String(a.order_date || '').localeCompare(String(b.order_date || '')) || String(a.created_at).localeCompare(String(b.created_at));
+      if (sort === 'oldest_payment') return earliestPayment(a).localeCompare(earliestPayment(b)) || String(a.order_date || '').localeCompare(String(b.order_date || ''));
+      if (sort === 'newest_payment') return latestPayment(b).localeCompare(latestPayment(a)) || String(b.order_date || '').localeCompare(String(a.order_date || ''));
+      if (sort === 'oldest_status') return String(a.last_status_at || a.updated_at || '').localeCompare(String(b.last_status_at || b.updated_at || ''));
+      return String(b.order_date || '').localeCompare(String(a.order_date || '')) || String(b.created_at).localeCompare(String(a.created_at));
+    });
+  }
+
   function filterRows() {
     const query = TF.$('orderSearch').value.trim().toLowerCase();
     const filter = TF.$('orderFilter').value;
-    return orders.filter((order) => {
+    const fulfillment = TF.$('orderFulfillmentFilter').value;
+    const { start, end } = filterRange();
+    const rows = orders.filter((order) => {
       const searchMatch = !query || [order.order_number, order.customer_name, order.phone, order.facebook_profile, order.tracking_number, order.latest_payment_account_name, order.status].some((value) => String(value || '').toLowerCase().includes(query));
-      if (!searchMatch) return false;
+      if (!searchMatch || !dateMatch(order, start, end)) return false;
+      if (fulfillment !== 'all' && order.fulfillment_method !== fulfillment) return false;
       if (filter === 'all') return true;
       if (filter === 'today') return order.order_date === TF.today();
+      if (filter === 'pending') return statusGroup(order) === 'pending';
+      if (filter === 'processing') return statusGroup(order) === 'processing';
       if (filter === 'awaiting') return ['unpaid', 'partial'].includes(order.payment_status) && !['cancelled', 'refunded'].includes(order.status);
       if (filter === 'paid') return ['paid', 'overpaid'].includes(order.payment_status) && !['cancelled', 'refunded'].includes(order.status);
       if (filter === 'packing') return ['confirmed', 'ready_to_pack', 'packing'].includes(order.status);
       if (filter === 'missing_tracking') return order.missing_tracking;
       if (filter === 'paid_late') return order.paid_not_shipped_alert;
+      if (filter === 'cancelled') return ['cancelled', 'refunded'].includes(order.status);
       return order.status === filter;
     });
+    return sortRows(rows);
+  }
+
+  function orderAge(order) {
+    let base = order.order_date;
+    let label = 'Ordered';
+    if (['confirmed', 'ready_to_pack', 'packing', 'waiting_stock', 'ready_to_ship'].includes(order.status) && order.latest_payment_date) { base = order.latest_payment_date; label = 'Paid'; }
+    if (['packing', 'waiting_stock', 'ready_to_ship', 'shipped'].includes(order.status) && order.last_status_at) { base = order.last_status_at; label = 'Updated'; }
+    const days = TF.daysBetween(base);
+    return days === 0 ? `${label} today` : `${label} ${days} day${days === 1 ? '' : 's'} ago`;
   }
 
   function quickActions(order) {
@@ -501,31 +614,54 @@
     return actions.join('');
   }
 
+  function updateBulkBar() {
+    const count = selectedOrderIds.size;
+    TF.$('bulkOrderBar').classList.toggle('hidden', count === 0);
+    TF.$('bulkSelectedCount').textContent = `${count} selected`;
+  }
+
   function renderOrders() {
     const rows = filterRows();
+    const visibleIds = new Set(rows.map((row) => row.id));
+    [...selectedOrderIds].forEach((id) => { if (!orders.some((order) => order.id === id)) selectedOrderIds.delete(id); });
+    TF.$('orderResultCount').textContent = `${rows.length.toLocaleString()} order${rows.length === 1 ? '' : 's'}`;
     TF.$('ordersTable').innerHTML = `
-      <table><thead><tr><th>Order</th><th>Customer</th><th>Pieces</th><th>Total / Paid</th><th>Received in</th><th>Status</th><th>Tracking</th><th>Actions</th></tr></thead>
+      <table><thead><tr><th><input id="selectAllOrders" type="checkbox" aria-label="Select all visible orders" ${rows.length && rows.every((row) => selectedOrderIds.has(row.id)) ? 'checked' : ''}></th><th>Order</th><th>Customer</th><th>Pieces</th><th>Total / Paid</th><th>Received in</th><th>Status</th><th>Age</th><th>Tracking</th><th>Actions</th></tr></thead>
       <tbody>${rows.map((order) => `<tr class="${order.paid_not_shipped_alert || order.missing_tracking ? 'attention-row' : ''}">
+        <td><input type="checkbox" data-select-order="${order.id}" ${selectedOrderIds.has(order.id) ? 'checked' : ''}></td>
         <td><strong>${TF.esc(order.order_number)}</strong><br><small>${TF.formatDate(order.order_date)}</small></td>
         <td>${TF.esc(order.customer_name)}<br><small>${TF.esc(order.phone || '')}</small>${order.facebook_profile ? `<br>${facebookLink(order.facebook_profile, 'Open profile')}` : ''}</td>
         <td>${TF.num(order.total_quantity).toLocaleString()}</td>
         <td>${TF.money(order.total_due)}<br><small>${TF.money(order.verified_total_paid)} verified</small></td>
         <td>${TF.esc(order.latest_payment_account_name || '—')}<br><small>${TF.formatDate(order.latest_payment_date)}</small></td>
         <td>${TF.statusPill(order.payment_status)} ${TF.statusPill(order.status)}${order.shortage_quantity ? `<br><span class="pill danger">${order.shortage_quantity} short</span>` : (order.status === 'waiting_stock' ? '<br><span class="pill ok">Stock available now</span>' : '')}</td>
+        <td><strong>${TF.esc(orderAge(order))}</strong><br><small>${TF.formatDateTime(order.last_activity_at)}</small></td>
         <td>${order.tracking_number ? `<code>${TF.esc(order.tracking_number)}</code>` : '<span class="muted">Not available</span>'}${order.missing_tracking ? '<br><span class="pill danger">Missing</span>' : ''}</td>
         <td><div class="row-actions">${quickActions(order)}</div></td>
-      </tr>`).join('') || '<tr><td colspan="8" class="empty">No orders found.</td></tr>'}</tbody></table>`;
+      </tr>`).join('') || '<tr><td colspan="10" class="empty">No orders found.</td></tr>'}</tbody></table>`;
+    updateBulkBar();
   }
 
   async function loadOrders() {
-    const result = await TF.state.supa.from('v_daily_ops_orders_v15').select('*').order('order_date', { ascending: false }).order('created_at', { ascending: false }).limit(5000);
-    if (result.error) throw result.error;
-    orders = result.data || [];
+    const [ordersResult, paymentsResult] = await Promise.all([
+      TF.state.supa.from('v_daily_ops_orders_v15').select('*').order('order_date', { ascending: false }).order('created_at', { ascending: false }).limit(10000),
+      TF.state.supa.from('payments').select('order_id,payment_date,status').eq('status', 'verified').order('payment_date', { ascending: true }).limit(30000)
+    ]);
+    if (ordersResult.error || paymentsResult.error) throw ordersResult.error || paymentsResult.error;
+    orders = ordersResult.data || [];
+    paymentDatesByOrder = new Map();
+    (paymentsResult.data || []).forEach((payment) => {
+      const dates = paymentDatesByOrder.get(payment.order_id) || [];
+      if (!dates.includes(payment.payment_date)) dates.push(payment.payment_date);
+      paymentDatesByOrder.set(payment.order_id, dates.sort());
+    });
     renderOrders();
-    const openId = new URLSearchParams(location.search).get('open');
+    const params = new URLSearchParams(location.search);
+    const openId = params.get('open');
+    const focus = params.get('focus');
     if (openId) {
       history.replaceState({}, '', './orderpage.html');
-      await openOrder(openId);
+      await openOrder(openId, focus === 'payment', focus === 'tracking');
     }
   }
 
@@ -669,6 +805,20 @@
   }
 
   async function tableAction(event) {
+    if (event.target.id === 'selectAllOrders') {
+      const rows = filterRows();
+      if (event.target.checked) rows.forEach((order) => selectedOrderIds.add(order.id));
+      else rows.forEach((order) => selectedOrderIds.delete(order.id));
+      renderOrders();
+      return;
+    }
+    const selector = event.target.closest('[data-select-order]');
+    if (selector) {
+      if (selector.checked) selectedOrderIds.add(selector.dataset.selectOrder);
+      else selectedOrderIds.delete(selector.dataset.selectOrder);
+      updateBulkBar();
+      return;
+    }
     const button = event.target.closest('[data-action]');
     if (!button) return;
     const order = orders.find((row) => row.id === button.dataset.id);
@@ -696,13 +846,85 @@
     await loadOrders();
   }
 
+  function updateOrderDateControls() {
+    const custom = TF.$('orderDatePreset').value === 'custom';
+    TF.$('orderStartWrap').classList.toggle('hidden', !custom);
+    TF.$('orderEndWrap').classList.toggle('hidden', !custom);
+  }
+
+  function clearOrderFilters() {
+    applyFilterState({});
+    selectedOrderIds.clear();
+    TF.$('savedFiltersSelect').value = '';
+    renderOrders();
+  }
+
+  async function applyBulkAction() {
+    const action = TF.$('bulkOrderAction').value;
+    const selected = orders.filter((order) => selectedOrderIds.has(order.id));
+    if (!action) return TF.toast('Choose a bulk action first', true);
+    if (!selected.length) return TF.toast('Select at least one order', true);
+    const label = {
+      packing: 'start packing', ready_to_ship: 'mark ready to ship', set_courier: 'set courier', shipped: 'mark shipped'
+    }[action];
+    if (!confirm(`${label} for ${selected.length} selected order${selected.length === 1 ? '' : 's'}?`)) return;
+    const button = TF.$('applyBulkOrderAction');
+    TF.setLoading(button, true, 'Applying…');
+    const errors = [];
+    try {
+      for (const order of selected) {
+        const targetStatus = action === 'set_courier' ? order.status : action;
+        const method = action === 'set_courier' ? TF.$('bulkCourier').value : order.fulfillment_method;
+        const result = await TF.state.supa.rpc('update_order_operations_v14', {
+          p_order_id: order.id,
+          p_status: targetStatus,
+          p_fulfillment_method: method,
+          p_tracking_number: order.tracking_number,
+          p_actual_courier_cost: order.courier_cost_finalized ? order.actual_courier_cost : null,
+          p_shipped_date: action === 'shipped' ? TF.today() : null,
+          p_delivered_date: null,
+          p_customer_update_note: order.customer_update_note,
+          p_status_note: `Bulk update from Orders page: ${label}`
+        });
+        if (result.error) errors.push(`${order.order_number}: ${result.error.message}`);
+      }
+      selectedOrderIds.clear();
+      await loadOrders();
+      if (errors.length) {
+        console.warn('Bulk action errors', errors);
+        TF.toast(`${selected.length - errors.length} updated; ${errors.length} failed. Check console.`, true);
+      } else {
+        TF.toast(`${selected.length} order${selected.length === 1 ? '' : 's'} updated`);
+      }
+    } finally {
+      TF.setLoading(button, false);
+    }
+  }
+
   function applyQueryFilter() {
-    const value = new URLSearchParams(location.search).get('filter');
+    const params = new URLSearchParams(location.search);
+    const value = params.get('filter');
     if (value && [...TF.$('orderFilter').options].some((option) => option.value === value)) TF.$('orderFilter').value = value;
+    const assignFromParam = (param, id) => {
+      const input = TF.$(id);
+      const val = params.get(param);
+      if (!input || val === null) return;
+      if (input.tagName === 'SELECT' && ![...input.options].some((option) => option.value === val)) return;
+      input.value = val;
+    };
+    assignFromParam('basis', 'orderDateBasis');
+    assignFromParam('preset', 'orderDatePreset');
+    assignFromParam('start', 'orderStartDate');
+    assignFromParam('end', 'orderEndDate');
+    assignFromParam('fulfillment', 'orderFulfillmentFilter');
+    assignFromParam('sort', 'orderSort');
+    assignFromParam('search', 'orderSearch');
+    updateOrderDateControls();
   }
 
   TF.ready.then(async () => {
     fillBase();
+    renderSavedFilters();
     applyQueryFilter();
     renderItems();
     updateConditions();
@@ -725,7 +947,19 @@
     TF.$('cancelEditBtn').addEventListener('click', resetForm);
     TF.$('newOrderBtn').addEventListener('click', () => { resetForm(); window.scrollTo({ top: 0, behavior: 'smooth' }); });
     TF.$('orderSearch').addEventListener('input', renderOrders);
-    TF.$('orderFilter').addEventListener('change', renderOrders);
+    ['orderDateBasis', 'orderFilter', 'orderFulfillmentFilter', 'orderSort', 'orderStartDate', 'orderEndDate'].forEach((id) => TF.$(id).addEventListener('change', renderOrders));
+    TF.$('orderDatePreset').addEventListener('change', () => { updateOrderDateControls(); renderOrders(); });
+    TF.$('clearOrderFilters').addEventListener('click', clearOrderFilters);
+    TF.$('saveCurrentFilterBtn').addEventListener('click', saveCurrentFilter);
+    TF.$('deleteSavedFilterBtn').addEventListener('click', deleteSavedFilter);
+    TF.$('savedFiltersSelect').addEventListener('change', () => {
+      const value = TF.$('savedFiltersSelect').value;
+      if (value === '') return;
+      const filter = savedFilters()[Number(value)];
+      if (filter) { applyFilterState(filter.state); renderOrders(); }
+    });
+    TF.$('applyBulkOrderAction').addEventListener('click', () => applyBulkAction().catch((error) => TF.fail(error, 'Bulk update failed')));
+    TF.$('clearBulkSelection').addEventListener('click', () => { selectedOrderIds.clear(); renderOrders(); });
     TF.$('ordersTable').addEventListener('click', tableAction);
     TF.$('closeOrderDialog').addEventListener('click', () => TF.$('orderDialog').close());
     TF.$('closeOrderDialogBottom').addEventListener('click', () => TF.$('orderDialog').close());
