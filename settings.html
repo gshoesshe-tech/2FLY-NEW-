@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Settings | 2FLY Daily Ops</title>
+  <link rel="stylesheet" href="./styles.css">
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="./config.js"></script>
+  <script defer src="./common.js"></script>
+  <script defer src="./settings.js"></script>
+</head>
+<body data-page="settings" data-required-role="owner">
+<div id="toast" class="toast"></div>
+<div class="app-shell">
+  <aside class="sidebar">
+    <div class="side-brand"><div class="logo small">2F</div><div><strong>2FLY Daily Ops</strong><span>Orders • Stock • Tracking</span></div></div>
+    <nav></nav>
+    <div class="side-user"><span id="userEmail">—</span><strong id="userRole">—</strong><button id="logoutBtn" class="btn ghost">Log out</button></div>
+  </aside>
+  <section class="workspace">
+    <header class="topbar">
+      <div><h2>Daily Operations Settings</h2><p>Keep the workflow simple and control what each team member can do.</p></div>
+      <div class="top-actions"><button id="refreshBtn" class="btn">Refresh</button></div>
+    </header>
+    <main class="page">
+      <section class="two-col">
+        <article class="card">
+          <div class="card-head"><div><h3>Operations alerts</h3><p>Choose when a paid order should be flagged as delayed.</p></div></div>
+          <form id="operationsSettingsForm" class="card-body form-grid">
+            <label>Paid but not shipped alert after
+              <div class="input-suffix"><input id="paidNotShippedDays" type="number" min="1" max="30" required><span>day(s)</span></div>
+            </label>
+            <div class="notice info span-2">Orders remain editable using their actual dates. This setting only controls the dashboard alert.</div>
+            <button class="btn primary span-2">Save Alert Setting</button>
+          </form>
+        </article>
+        <article class="card">
+          <div class="card-head"><div><h3>Payment accounts</h3><p>Accounts that can be selected during payment confirmation.</p></div></div>
+          <div class="table-wrap" id="accountsTable"></div>
+          <div class="card-body"><p class="muted">These accounts appear when confirming customer payments.</p></div>
+        </article>
+      </section>
+
+      <article class="card">
+        <div class="card-head"><div><h3>Team permissions</h3><p>Owners always have full access. Set only the tools each staff member needs.</p></div></div>
+        <div class="table-wrap" id="permissionsTable"></div>
+      </article>
+
+      <article class="card">
+        <div class="card-head"><div><h3>Low-stock levels</h3><p>A category appears in alerts when available stock reaches this number.</p></div></div>
+        <div class="table-wrap" id="lowStockTable"></div>
+      </article>
+
+
+    </main>
+  </section>
+</div>
+</body>
+</html>

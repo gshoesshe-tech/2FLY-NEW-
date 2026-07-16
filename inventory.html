@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Inventory | 2FLY Daily Ops</title>
+  <link rel="stylesheet" href="./styles.css">
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script><script src="./config.js"></script><script defer src="./common.js"></script><script defer src="./inventory.js"></script>
+</head>
+<body data-page="inventory" data-required-role="team">
+<div id="toast" class="toast"></div><div class="app-shell">
+<aside class="sidebar"><div class="side-brand"><div class="logo small">2F</div><div><strong>2FLY Daily Ops</strong><span>Orders • Stock • Tracking</span></div></div><nav></nav><div class="side-user"><span id="userEmail">—</span><strong id="userRole">—</strong><button id="logoutBtn" class="btn ghost">Log out</button></div></aside>
+<section class="workspace"><header class="topbar"><div><h2>Inventory</h2><p>Current website stock based on the previous inventory, pullouts, and new orders.</p></div><div class="top-actions"><button id="refreshBtn" class="btn">Refresh</button></div></header>
+<main class="page">
+<div class="notice info"><strong>Imported starting stock:</strong> the current category totals from the old project are already loaded. New fully paid orders reserve stock; shipping deducts it. You can correct the totals later using Physical Count.</div>
+<section class="kpi-grid four"><article class="kpi"><span>Total on hand</span><strong id="invOnHand">0</strong></article><article class="kpi"><span>Reserved for orders</span><strong id="invReserved">0</strong></article><article class="kpi"><span>Available</span><strong id="invAvailable">0</strong></article><article class="kpi"><span>Low-stock categories</span><strong id="invLow">0</strong></article></section>
+
+<div class="two-col perm-manage-inventory">
+<article class="card"><div class="card-head"><div><h3>Receive finished stock</h3><p>Use this when finished products physically arrive.</p></div></div><form id="receiveStockForm" class="card-body form-grid"><label>Category<select id="receiveCategory"></select></label><label>Quantity received<input id="receiveQty" type="number" min="1" step="1" required></label><label>Date received<input id="receiveDate" type="date" required></label><label>Source<input id="receiveSource" placeholder="Beth output, supplier, old stock..."></label><label class="span-2">Notes<textarea id="receiveNotes"></textarea></label><button class="btn primary span-2">Add to Inventory</button></form></article>
+<article class="card"><div class="card-head"><div><h3>Save physical count</h3><p>Use only after physically counting a category.</p></div></div><form id="physicalCountForm" class="card-body form-grid"><label>Category<select id="countCategory"></select></label><label>Actual physical total<input id="physicalCount" type="number" min="0" step="1" required></label><label>Count date<input id="countDate" type="date" required></label><label class="span-2">Required reason<textarea id="countReason" placeholder="Weekly physical count, missing pieces, correction..." required></textarea></label><button class="btn danger span-2">Save Physical Count</button></form></article>
+</div>
+
+<article class="card"><div class="card-head filters-head"><div><h3>Current stock</h3><p>Available = On hand − Reserved.</p></div><input id="inventorySearch" placeholder="Search category"></div><div class="table-wrap" id="inventoryTable"></div></article>
+
+<article class="card perm-manage-inventory"><div class="card-head"><div><h3>Recent stock movements</h3><p>Shows orders, received stock, and physical-count corrections.</p></div></div><div class="table-wrap" id="movementTable"></div></article>
+</main></section></div>
+</body></html>

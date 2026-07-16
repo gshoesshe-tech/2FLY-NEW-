@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Daily Summary | 2FLY Daily Ops</title>
+  <link rel="stylesheet" href="./styles.css">
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="./config.js"></script>
+  <script defer src="./common.js"></script>
+  <script defer src="./daily.js"></script>
+</head>
+<body data-page="daily" data-required-role="team" data-required-permission="view_daily_summary">
+<div id="toast" class="toast"></div>
+<div class="app-shell">
+  <aside class="sidebar">
+    <div class="side-brand"><div class="logo small">2F</div><div><strong>2FLY Daily Ops</strong><span>Orders • Stock • Tracking</span></div></div>
+    <nav></nav>
+    <div class="side-user"><span id="userEmail">—</span><strong id="userRole">—</strong><button id="logoutBtn" class="btn ghost">Log out</button></div>
+  </aside>
+  <section class="workspace">
+    <header class="topbar">
+      <div><h2>Daily Summary</h2><p>One clear recap of orders, payments, and fulfillment for the selected date.</p></div>
+      <div class="top-actions"><button id="refreshBtn" class="btn">Refresh</button></div>
+    </header>
+    <main class="page">
+      <article class="card">
+        <div class="card-body summary-toolbar">
+          <label>Date<input id="summaryDate" type="date"></label>
+          <button id="todayBtn" class="btn">Today</button>
+          <button id="copySummaryBtn" class="btn primary">Copy Daily Summary</button>
+          <button id="exportCsvBtn" class="btn">Export CSV</button>
+        </div>
+      </article>
+
+      <section class="kpi-grid six daily-kpis">
+        <article class="kpi"><span>Orders entered</span><strong id="ordersEntered">0</strong></article>
+        <article class="kpi"><span>Payments confirmed</span><strong id="paymentsCount">0</strong></article>
+        <article class="kpi"><span>Total received</span><strong id="totalReceived">₱0</strong></article>
+        <article class="kpi"><span>Pieces in paid orders</span><strong id="piecesPaid">0</strong></article>
+        <article class="kpi"><span>Orders shipped</span><strong id="ordersShipped">0</strong></article>
+        <article class="kpi"><span>Orders delivered</span><strong id="ordersDelivered">0</strong></article>
+      </section>
+
+      <section class="two-col wide-left">
+        <article class="card">
+          <div class="card-head"><div><h3>Payments by account</h3><p>Verified customer payments received on the selected date.</p></div></div>
+          <div class="table-wrap" id="accountTotalsTable"></div>
+        </article>
+        <article class="card">
+          <div class="card-head"><div><h3>Payment breakdown</h3><p>Product, shipping, and unapplied amounts.</p></div></div>
+          <div class="card-body summary-stack" id="paymentBreakdown"></div>
+        </article>
+      </section>
+
+      <section class="two-col">
+        <article class="card">
+          <div class="card-head"><div><h3>Orders entered</h3><p>Orders whose actual order date matches the selected date.</p></div></div>
+          <div class="table-wrap" id="enteredOrdersTable"></div>
+        </article>
+        <article class="card">
+          <div class="card-head"><div><h3>Fulfillment activity</h3><p>Orders shipped or delivered on the selected date.</p></div></div>
+          <div class="table-wrap" id="fulfillmentTable"></div>
+        </article>
+      </section>
+
+      <article class="card">
+        <div class="card-head"><div><h3>Still needs attention</h3><p>Current open queues, not limited to the selected date.</p></div></div>
+        <div class="attention-grid" id="attentionGrid"></div>
+      </article>
+
+      <article class="card">
+        <div class="card-head"><div><h3>Copy preview</h3><p>This is the message copied by the button above.</p></div></div>
+        <pre id="summaryPreview" class="raw-form"></pre>
+      </article>
+    </main>
+  </section>
+</div>
+</body>
+</html>

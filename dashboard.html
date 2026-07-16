@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Daily Dashboard | 2FLY</title>
+  <link rel="stylesheet" href="./styles.css">
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="./config.js"></script>
+  <script defer src="./common.js"></script>
+  <script defer src="./dashboard.js"></script>
+</head>
+<body data-page="dashboard" data-required-role="team">
+<div id="toast" class="toast"></div>
+<div class="app-shell">
+  <aside class="sidebar">
+    <div class="side-brand"><div class="logo small">2F</div><div><strong>2FLY Daily Ops</strong><span>Orders • Stock • Tracking</span></div></div>
+    <nav></nav>
+    <div class="side-user"><span id="userEmail">—</span><strong id="userRole">—</strong><button id="logoutBtn" class="btn ghost">Log out</button></div>
+  </aside>
+  <section class="workspace">
+    <header class="topbar">
+      <div><h2>Daily Dashboard</h2><p>What needs attention right now.</p></div>
+      <div class="top-actions"><label class="compact-field">Order month<input id="dashboardMonth" type="month"></label><button id="refreshBtn" class="btn">Refresh</button></div>
+    </header>
+    <main class="page">
+      <section class="kpi-grid six daily-kpis">
+        <a class="kpi clickable" href="./orderpage.html?filter=today"><span>Orders today</span><strong id="kpiOrdersToday">0</strong><small>Created today</small></a>
+        <a class="kpi clickable" href="./orderpage.html?filter=awaiting"><span>Awaiting payment</span><strong id="kpiAwaiting">0</strong><small>Unpaid or partial</small></a>
+        <a class="kpi clickable" href="./orderpage.html?filter=packing"><span>Needs packing</span><strong id="kpiPacking">0</strong><small>Paid and active</small></a>
+        <a class="kpi clickable" href="./orderpage.html?filter=waiting_stock"><span>Waiting for stock</span><strong id="kpiWaitingStock">0</strong><small>Paid but incomplete</small></a>
+        <a class="kpi clickable" href="./tracking.html?filter=missing_tracking"><span>Missing tracking</span><strong id="kpiMissingTracking">0</strong><small>Shipped without number</small></a>
+        <a class="kpi clickable" href="./tracking.html?filter=ready_to_ship"><span>Ready to ship</span><strong id="kpiReadyToShip">0</strong><small>Needs courier update</small></a>
+      </section>
+
+      <section class="two-col wide-left">
+        <article class="card">
+          <div class="card-head"><div><h3>Urgent tasks</h3><p>These stay visible until someone updates the order.</p></div></div>
+          <div class="list" id="urgentTasks"></div>
+        </article>
+        <article class="card">
+          <div class="card-head"><div><h3>July order progress</h3><p>All orders entered with July dates are included.</p></div></div>
+          <div class="summary-grid" id="monthProgress"></div>
+        </article>
+      </section>
+
+      <section class="two-col">
+        <article class="card">
+          <div class="card-head"><div><h3>Waiting-for-stock board</h3><p>Paid orders currently blocked by unavailable stock.</p></div><a class="btn" href="./orderpage.html?filter=waiting_stock">Open all</a></div>
+          <div class="table-wrap" id="waitingStockTable"></div>
+        </article>
+        <article class="card">
+          <div class="card-head"><div><h3>Low-stock alerts</h3><p>Based on current available inventory.</p></div><a class="btn" href="./inventory.html">Open inventory</a></div>
+          <div class="list" id="lowStockList"></div>
+        </article>
+      </section>
+
+      <article class="card">
+        <div class="card-head"><div><h3>Recent orders</h3><p>Quick status view for customer updates.</p></div><a class="btn primary" href="./orderpage.html">Add / view orders</a></div>
+        <div class="table-wrap" id="recentOrders"></div>
+      </article>
+    </main>
+  </section>
+</div>
+</body>
+</html>

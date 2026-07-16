@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Tracking & Updates | 2FLY</title>
+  <link rel="stylesheet" href="./styles.css">
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script><script src="./config.js"></script><script defer src="./common.js"></script><script defer src="./tracking.js"></script>
+</head>
+<body data-page="tracking" data-required-role="team" data-required-permission="update_tracking">
+<div id="toast" class="toast"></div><div class="app-shell">
+<aside class="sidebar"><div class="side-brand"><div class="logo small">2F</div><div><strong>2FLY Daily Ops</strong><span>Orders • Stock • Tracking</span></div></div><nav></nav><div class="side-user"><span id="userEmail">—</span><strong id="userRole">—</strong><button id="logoutBtn" class="btn ghost">Log out</button></div></aside>
+<section class="workspace"><header class="topbar"><div><h2>Tracking &amp; Updates</h2><p>Search a customer and see the latest shipping update immediately.</p></div><div class="top-actions"><button id="refreshBtn" class="btn">Refresh</button></div></header>
+<main class="page">
+<section class="kpi-grid five">
+  <a class="kpi clickable" data-filter-card="missing_tracking"><span>Missing tracking</span><strong id="trackingMissing">0</strong></a>
+  <a class="kpi clickable" data-filter-card="ready_to_ship"><span>Ready to ship</span><strong id="trackingReady">0</strong></a>
+  <a class="kpi clickable" data-filter-card="shipped"><span>Shipped</span><strong id="trackingShipped">0</strong></a>
+  <a class="kpi clickable" data-filter-card="waiting_stock"><span>Waiting stock</span><strong id="trackingWaiting">0</strong></a>
+  <a class="kpi clickable" data-filter-card="paid_late"><span>Paid, not shipped</span><strong id="trackingLate">0</strong></a>
+</section>
+<article class="card"><div class="card-head filters-head"><div><h3>Customer status lookup</h3><p>Search by name, phone, order number, or tracking number.</p></div><div class="filter-row"><input id="trackingSearch" placeholder="Search customer, phone, order or tracking"><select id="trackingFilter"><option value="active">Needs update</option><option value="all">All orders</option><option value="missing_tracking">Missing tracking</option><option value="ready_to_ship">Ready to ship</option><option value="shipped">Shipped</option><option value="delivered">Delivered</option><option value="waiting_stock">Waiting for stock</option><option value="paid_late">Paid but not shipped</option></select></div></div><div class="table-wrap" id="trackingTable"></div></article>
+</main></section></div>
+<dialog id="trackingDialog"><form id="trackingForm" class="dialog-card wide"><div class="dialog-title-row"><div><h3 id="trackingDialogTitle">Tracking update</h3><p id="trackingDialogMeta" class="muted"></p></div><button id="closeTrackingDialog" type="button" class="btn">Close</button></div>
+<div class="form-grid cols-3">
+<label>Status<select id="trackStatus"><option value="draft">Awaiting Payment</option><option value="payment_review">Partially Paid</option><option value="confirmed">Paid</option><option value="waiting_stock">Waiting for Stock</option><option value="ready_to_pack">Paid / Ready to Pack</option><option value="packing">Packing</option><option value="ready_to_ship">Ready to Ship</option><option value="shipped">Shipped</option><option value="delivered">Delivered</option></select></label>
+<label>Fulfillment<select id="trackMethod"><option value="unselected">Not selected</option><option value="jnt">J&amp;T</option><option value="lalamove">Lalamove</option><option value="walk_in">Walk-in / Pickup</option></select></label>
+<label>Tracking number<input id="trackNumber"></label>
+<label>Actual shipped date<input id="trackShippedDate" type="date"></label><label>Delivered date<input id="trackDeliveredDate" type="date"></label><label>Actual courier cost<input id="trackCourierCost" type="number" min="0" step="0.01"></label>
+<label class="span-3">Customer update note<textarea id="trackCustomerNote"></textarea></label><label class="span-3">Status note<textarea id="trackStatusNote"></textarea></label>
+</div>
+<div class="customer-message-box"><div class="dialog-section-head"><h4>Ready-to-copy customer update</h4><button type="button" id="copyTrackingUpdate" class="btn">Copy Message</button></div><pre id="trackingMessage" class="raw-form"></pre></div>
+<div class="dialog-actions"><button type="button" id="copyTrackingNumber" class="btn">Copy Tracking Number</button><button class="btn primary">Save Update</button></div></form></dialog>
+</body></html>
