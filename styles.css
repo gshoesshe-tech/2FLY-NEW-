@@ -141,3 +141,248 @@ hr{border-color:var(--line)}
 @media(max-width:1250px){.dashboard-filter-grid{grid-template-columns:repeat(3,1fr)}.todo-count-grid{grid-template-columns:repeat(3,1fr)}.todo-filter-grid,.order-filter-panel{grid-template-columns:repeat(3,1fr)}}
 @media(max-width:850px){.dashboard-filter-grid,.todo-filter-grid,.order-filter-panel{grid-template-columns:repeat(2,1fr)}.todo-count-grid{grid-template-columns:repeat(2,1fr)}.todo-filter-grid .todo-search,.order-filter-panel .filter-search-wide{grid-column:1/-1}.saved-filter-bar>*{flex:1 1 160px}.bulk-order-bar>*{flex:1 1 160px}}
 @media(max-width:520px){.dashboard-filter-grid,.todo-filter-grid,.order-filter-panel,.todo-count-grid{grid-template-columns:1fr}.todo-filter-grid .todo-search,.order-filter-panel .filter-search-wide{grid-column:auto}.number-card strong{font-size:24px}}
+
+/* ========================================================================
+   ORDERS — CLEAN TABLE (COMPACT)
+   ======================================================================== */
+.orders-clean-table-wrap{
+  overflow:auto;
+  background:var(--panel);
+  scrollbar-gutter:stable;
+}
+.orders-clean-table{
+  min-width:1180px;
+  width:100%;
+  table-layout:fixed;
+  border-collapse:separate;
+  border-spacing:0;
+}
+.orders-clean-table .col-select{width:42px}
+.orders-clean-table .col-order{width:165px}
+.orders-clean-table .col-customer{width:190px}
+.orders-clean-table .col-items{width:120px}
+.orders-clean-table .col-total{width:105px}
+.orders-clean-table .col-payment{width:145px}
+.orders-clean-table .col-status{width:135px}
+.orders-clean-table .col-tracking{width:150px}
+.orders-clean-table .col-date{width:120px}
+.orders-clean-table .col-actions{width:95px}
+.orders-clean-table th{
+  top:0;
+  z-index:4;
+  height:44px;
+  padding:10px 10px;
+  white-space:nowrap;
+  border-bottom:1px solid var(--line-strong);
+}
+.orders-clean-table td{
+  height:74px;
+  padding:11px 10px;
+  vertical-align:middle;
+  overflow:hidden;
+}
+.orders-clean-table td>strong,
+.orders-clean-table td>small{
+  display:block;
+}
+.orders-clean-table td small{
+  margin-top:3px;
+  line-height:1.25;
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+}
+.orders-clean-table tbody tr.clean-order-row{
+  display:table-row;
+  cursor:pointer;
+  transition:background-color .14s ease;
+}
+.orders-clean-table tbody tr.clean-order-row:hover td{
+  background:#171f29;
+}
+.orders-clean-table tbody tr.attention-row{
+  display:table-row!important;
+  padding:0!important;
+  border:0!important;
+}
+.orders-clean-table tbody tr.attention-row td{
+  background:rgba(208,95,105,.055);
+}
+.orders-clean-table tbody tr.attention-row td:first-child{
+  box-shadow:inset 3px 0 0 var(--danger);
+}
+.order-number-text{
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  font-size:12px;
+  letter-spacing:-.01em;
+}
+.customer-name-text{
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+}
+.customer-subline{
+  display:flex;
+  align-items:center;
+  gap:6px;
+  min-width:0;
+  margin-top:3px;
+  color:var(--muted);
+  font-size:11px;
+}
+.customer-subline>span{
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+}
+.facebook-mini-link{
+  flex:0 0 17px;
+  width:17px;
+  height:17px;
+  display:inline-grid;
+  place-items:center;
+  border-radius:50%;
+  background:#1877f2;
+  color:#fff!important;
+  text-decoration:none;
+  font:800 11px/1 Arial,sans-serif;
+}
+.payment-state{
+  display:inline-flex;
+  align-items:center;
+  width:max-content;
+  max-width:100%;
+  border-radius:999px;
+  padding:3px 7px;
+  border:1px solid var(--line-strong);
+  font-size:10px;
+  font-weight:800;
+  white-space:nowrap;
+}
+.payment-state.is-paid{background:var(--ok-soft);border-color:#2d654f;color:#a6dfc0}
+.payment-state.is-partial{background:var(--warn-soft);border-color:#745824;color:#f1ce88}
+.payment-state.is-unpaid{background:var(--danger-soft);border-color:#74323b;color:#f0aab2}
+.order-status-pill{
+  max-width:100%;
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+}
+.shortage-note,.missing-note{
+  color:#f0aab2!important;
+  font-weight:800;
+}
+.tracking-code{
+  display:block;
+  max-width:100%;
+  overflow:hidden;
+  white-space:nowrap;
+  text-overflow:ellipsis;
+}
+.tracking-empty{
+  display:block;
+  color:var(--muted);
+  white-space:nowrap;
+}
+.clean-order-actions{
+  display:flex;
+  align-items:center;
+  justify-content:flex-end;
+  gap:6px;
+  overflow:visible;
+}
+.order-view-btn{white-space:nowrap}
+.order-more-menu{position:relative;overflow:visible}
+.order-more-menu summary{
+  list-style:none;
+  width:31px;
+  height:31px;
+  display:grid;
+  place-items:center;
+  border:1px solid var(--line-strong);
+  border-radius:5px;
+  background:#171e27;
+  color:var(--text);
+  cursor:pointer;
+  font-size:20px;
+  line-height:1;
+  user-select:none;
+}
+.order-more-menu summary::-webkit-details-marker{display:none}
+.order-more-menu[open] summary,.order-more-menu summary:hover{background:#202936;border-color:#4a5868}
+.order-more-panel{
+  position:absolute;
+  z-index:20;
+  right:0;
+  top:37px;
+  width:180px;
+  display:grid;
+  padding:6px;
+  border:1px solid var(--line-strong);
+  border-radius:6px;
+  background:#111820;
+  box-shadow:0 14px 30px rgba(0,0,0,.34);
+}
+.order-more-panel a,.order-more-panel button{
+  display:block;
+  width:100%;
+  padding:9px 10px;
+  border:0;
+  border-radius:4px;
+  background:transparent;
+  color:var(--text);
+  text-align:left;
+  text-decoration:none;
+  font:inherit;
+  font-size:12px;
+  font-weight:700;
+  cursor:pointer;
+}
+.order-more-panel a:hover,.order-more-panel button:hover{background:var(--panel-soft)}
+.order-menu-empty{padding:8px 9px;color:var(--muted);font-size:11px}
+
+@media(max-width:760px){
+  .orders-clean-table-wrap{overflow:visible;padding:10px}
+  .orders-clean-table{display:block;min-width:0}
+  .orders-clean-table colgroup,.orders-clean-table thead{display:none}
+  .orders-clean-table tbody{display:grid;gap:10px}
+  .orders-clean-table tbody tr.clean-order-row,
+  .orders-clean-table tbody tr.attention-row{
+    display:grid!important;
+    grid-template-columns:1fr 1fr;
+    gap:10px 12px;
+    padding:12px!important;
+    border:1px solid var(--line)!important;
+    border-radius:7px;
+    background:var(--panel-soft);
+  }
+  .orders-clean-table tbody tr.attention-row{border-left:3px solid var(--danger)!important}
+  .orders-clean-table tbody tr.clean-order-row td{
+    display:block;
+    height:auto;
+    min-width:0;
+    padding:0;
+    border:0;
+    background:transparent!important;
+  }
+  .orders-clean-table tbody tr.clean-order-row td::before{
+    content:attr(data-label);
+    display:block;
+    margin-bottom:3px;
+    color:var(--muted);
+    font-size:9px;
+    font-weight:850;
+    text-transform:uppercase;
+    letter-spacing:.06em;
+  }
+  .orders-clean-table tbody tr.clean-order-row td:first-child{position:absolute;opacity:0;pointer-events:none}
+  .orders-clean-table tbody tr.clean-order-row td[data-label="Order"],
+  .orders-clean-table tbody tr.clean-order-row td[data-label="Customer"],
+  .orders-clean-table tbody tr.clean-order-row td[data-label="Tracking"],
+  .orders-clean-table tbody tr.clean-order-row td[data-label="Actions"]{grid-column:1/-1}
+  .clean-order-actions{justify-content:flex-start}
+  .order-more-panel{left:0;right:auto}
+}
+.orders-clean-table tbody tr:nth-last-child(-n+3) .order-more-panel{top:auto;bottom:37px}
