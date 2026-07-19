@@ -626,7 +626,8 @@
     const items = orderItemsByOrder.get(order.id) || [];
     const grouped = new Map();
     items.forEach((item) => {
-      const name = String(item.category || item.category_code || 'Item').trim();
+      const category = TF.state.categoryById.get(item.category_id);
+      const name = String(category?.name || item.product_name || item.sku || 'Item').trim();
       grouped.set(name, (grouped.get(name) || 0) + TF.num(item.quantity));
     });
     const names = [...grouped.keys()];
@@ -702,7 +703,7 @@
     const [ordersResult, paymentsResult, itemsResult] = await Promise.all([
       TF.state.supa.from('v_daily_ops_orders_v15').select('*').order('order_date', { ascending: false }).order('created_at', { ascending: false }).limit(10000),
       TF.state.supa.from('payments').select('order_id,payment_date,status').eq('status', 'verified').order('payment_date', { ascending: true }).limit(30000),
-      TF.state.supa.from('order_items').select('order_id,category,category_code,quantity').limit(50000)
+      TF.state.supa.from('order_items').select('order_id,category_id,product_name,sku,quantity').limit(50000)
     ]);
     if (ordersResult.error || paymentsResult.error || itemsResult.error) throw ordersResult.error || paymentsResult.error || itemsResult.error;
     orders = ordersResult.data || [];
