@@ -8,6 +8,7 @@
   let editingOrderId = null;
   let lastExpected = 0;
   let paymentDatesByOrder = new Map();
+  let orderItemsByOrder = new Map();
   const selectedOrderIds = new Set();
   const SAVED_FILTERS_KEY = '2fly.dailyOps.orderFilters.v1';
 
@@ -601,17 +602,60 @@
     return days === 0 ? `${label} today` : `${label} ${days} day${days === 1 ? '' : 's'} ago`;
   }
 
-  function quickActions(order) {
-    const actions = [`<button class="btn small" data-action="view" data-id="${order.id}">Open</button>`];
-    if (order.facebook_profile) actions.push(facebookLink(order.facebook_profile, 'Facebook'));
-    if (TF.can('confirm_payments') && ['unpaid', 'partial'].includes(order.payment_status) && !['cancelled', 'refunded'].includes(order.status)) actions.push(`<button class="btn primary small" data-action="pay" data-id="${order.id}">Confirm Payment</button>`);
+  function primaryStatus(order) {
+    if (['cancelled', 'refunded', 'delivered', 'shipped', 'ready_to_ship', 'packing', 'waiting_stock'].includes(order.status)) return order.status;
+    if (order.payment_status === 'partial') return 'partial';
+    if (order.payment_status === 'unpaid') return 'draft';
+    if (['paid', 'overpaid'].includes(order.payment_status)) return 'confirmed';
+    return order.status || 'draft';
+  }
+
+  function compactStatusPill(order) {
+    const key = primaryStatus(order);
+    const className = ['confirmed', 'ready_to_ship', 'delivered'].includes(key)
+      ? 'ok'
+      : ['packing', 'waiting_stock', 'shipped', 'partial'].includes(key)
+        ? 'warn'
+        : ['cancelled', 'refunded', 'unpaid'].includes(key)
+          ? 'danger'
+          : '';
+    return `<span class="pill order-status-pill ${className}">${TF.esc(TF.statusLabel(key))}</span>`;
+  }
+
+  function categorySummary(order) {
+    const items = orderItemsByOrder.get(order.id) || [];
+    const grouped = new Map();
+    items.forEach((item) => {
+      const name = String(item.category || item.category_code || 'Item').trim();
+      grouped.set(name, (grouped.get(name) || 0) + TF.num(item.quantity));
+    });
+    const names = [...grouped.keys()];
+    if (!names.length) return 'Category items';
+    if (names.length === 1) return names[0];
+    if (names.length === 2) return names.join(' + ');
+    return `${names[0]} +${names.length - 1} more`;
+  }
+
+  function quickMenuActions(order) {
+    const actions = [];
+    if (order.facebook_profile) actions.push(`<a href="${TF.esc(facebookUrl(order.facebook_profile))}" target="_blank" rel="noopener noreferrer">Open Facebook</a>`);
+    if (TF.can('confirm_payments') && ['unpaid', 'partial'].includes(order.payment_status) && !['cancelled', 'refunded'].includes(order.status)) actions.push(`<button type="button" data-action="pay" data-id="${order.id}">Confirm Payment</button>`);
     if (TF.can('update_tracking')) {
-      if (['confirmed', 'ready_to_pack'].includes(order.status) || (order.status === 'waiting_stock' && TF.num(order.shortage_quantity) === 0)) actions.push(`<button class="btn small" data-action="packing" data-id="${order.id}">Start Packing</button>`);
-      if (order.status === 'packing') actions.push(`<button class="btn primary small" data-action="ready" data-id="${order.id}">Ready to Ship</button>`);
-      if (order.status === 'ready_to_ship') actions.push(`<button class="btn primary small" data-action="openTracking" data-id="${order.id}">Add Tracking</button>`);
-      if (order.status === 'shipped') actions.push(`<button class="btn small" data-action="openTracking" data-id="${order.id}">${order.tracking_number ? 'Edit Tracking' : 'Add Tracking'}</button>`);
+      if (['confirmed', 'ready_to_pack'].includes(order.status) || (order.status === 'waiting_stock' && TF.num(order.shortage_quantity) === 0)) actions.push(`<button type="button" data-action="packing" data-id="${order.id}">Start Packing</button>`);
+      if (order.status === 'packing') actions.push(`<button type="button" data-action="ready" data-id="${order.id}">Ready to Ship</button>`);
+      if (['ready_to_ship', 'shipped'].includes(order.status)) actions.push(`<button type="button" data-action="openTracking" data-id="${order.id}">${order.tracking_number ? 'Edit Tracking' : 'Add Tracking'}</button>`);
     }
-    return actions.join('');
+    return actions.join('') || '<span class="order-menu-empty">No quick actions</span>';
+  }
+
+  function orderActions(order) {
+    return `<div class="clean-order-actions">
+      <button class="btn small order-view-btn" data-action="view" data-id="${order.id}">View</button>
+      <details class="order-more-menu">
+        <summary aria-label="More actions">⋮</summary>
+        <div class="order-more-panel">${quickMenuActions(order)}</div>
+      </details>
+    </div>`;
   }
 
   function updateBulkBar() {
@@ -622,33 +666,52 @@
 
   function renderOrders() {
     const rows = filterRows();
-    const visibleIds = new Set(rows.map((row) => row.id));
     [...selectedOrderIds].forEach((id) => { if (!orders.some((order) => order.id === id)) selectedOrderIds.delete(id); });
     TF.$('orderResultCount').textContent = `${rows.length.toLocaleString()} order${rows.length === 1 ? '' : 's'}`;
+    TF.$('ordersTable').className = 'table-wrap orders-clean-table-wrap';
     TF.$('ordersTable').innerHTML = `
-      <table><thead><tr><th><input id="selectAllOrders" type="checkbox" aria-label="Select all visible orders" ${rows.length && rows.every((row) => selectedOrderIds.has(row.id)) ? 'checked' : ''}></th><th>Order</th><th>Customer</th><th>Pieces</th><th>Total / Paid</th><th>Received in</th><th>Status</th><th>Age</th><th>Tracking</th><th>Actions</th></tr></thead>
-      <tbody>${rows.map((order) => `<tr class="${order.paid_not_shipped_alert || order.missing_tracking ? 'attention-row' : ''}">
-        <td><input type="checkbox" data-select-order="${order.id}" ${selectedOrderIds.has(order.id) ? 'checked' : ''}></td>
-        <td><strong>${TF.esc(order.order_number)}</strong><br><small>${TF.formatDate(order.order_date)}</small></td>
-        <td>${TF.esc(order.customer_name)}<br><small>${TF.esc(order.phone || '')}</small>${order.facebook_profile ? `<br>${facebookLink(order.facebook_profile, 'Open profile')}` : ''}</td>
-        <td>${TF.num(order.total_quantity).toLocaleString()}</td>
-        <td>${TF.money(order.total_due)}<br><small>${TF.money(order.verified_total_paid)} verified</small></td>
-        <td>${TF.esc(order.latest_payment_account_name || '—')}<br><small>${TF.formatDate(order.latest_payment_date)}</small></td>
-        <td>${TF.statusPill(order.payment_status)} ${TF.statusPill(order.status)}${order.shortage_quantity ? `<br><span class="pill danger">${order.shortage_quantity} short</span>` : (order.status === 'waiting_stock' ? '<br><span class="pill ok">Stock available now</span>' : '')}</td>
-        <td><strong>${TF.esc(orderAge(order))}</strong><br><small>${TF.formatDateTime(order.last_activity_at)}</small></td>
-        <td>${order.tracking_number ? `<code>${TF.esc(order.tracking_number)}</code>` : '<span class="muted">Not available</span>'}${order.missing_tracking ? '<br><span class="pill danger">Missing</span>' : ''}</td>
-        <td><div class="row-actions">${quickActions(order)}</div></td>
-      </tr>`).join('') || '<tr><td colspan="10" class="empty">No orders found.</td></tr>'}</tbody></table>`;
+      <table class="orders-clean-table">
+        <colgroup>
+          <col class="col-select"><col class="col-order"><col class="col-customer"><col class="col-items"><col class="col-total"><col class="col-payment"><col class="col-status"><col class="col-tracking"><col class="col-date"><col class="col-actions">
+        </colgroup>
+        <thead><tr>
+          <th><input id="selectAllOrders" type="checkbox" aria-label="Select all visible orders" ${rows.length && rows.every((row) => selectedOrderIds.has(row.id)) ? 'checked' : ''}></th>
+          <th>Order</th><th>Customer</th><th>Items</th><th>Total</th><th>Payment</th><th>Status</th><th>Tracking</th><th>Date</th><th>Actions</th>
+        </tr></thead>
+        <tbody>${rows.map((order) => {
+          const alert = order.paid_not_shipped_alert || order.missing_tracking;
+          const paid = ['paid', 'overpaid'].includes(order.payment_status);
+          return `<tr data-open-row="${order.id}" class="clean-order-row ${alert ? 'attention-row' : ''}">
+            <td data-label="Select"><input type="checkbox" data-select-order="${order.id}" ${selectedOrderIds.has(order.id) ? 'checked' : ''}></td>
+            <td data-label="Order"><strong class="order-number-text">${TF.esc(order.order_number)}</strong><small>${TF.formatDate(order.order_date)}</small></td>
+            <td data-label="Customer"><strong class="customer-name-text">${TF.esc(order.customer_name)}</strong><div class="customer-subline"><span>${TF.esc(order.phone || 'No phone')}</span>${order.facebook_profile ? `<a class="facebook-mini-link" href="${TF.esc(facebookUrl(order.facebook_profile))}" target="_blank" rel="noopener noreferrer" title="Open Facebook profile">f</a>` : ''}</div></td>
+            <td data-label="Items"><strong>${TF.num(order.total_quantity).toLocaleString()} ${TF.num(order.total_quantity) === 1 ? 'pc' : 'pcs'}</strong><small title="${TF.esc(categorySummary(order))}">${TF.esc(categorySummary(order))}</small></td>
+            <td data-label="Total"><strong>${TF.money(order.total_due)}</strong><small>${paid ? `${TF.money(order.verified_total_paid)} paid` : `${TF.money(order.verified_total_paid)} received`}</small></td>
+            <td data-label="Payment"><span class="payment-state ${paid ? 'is-paid' : order.payment_status === 'partial' ? 'is-partial' : 'is-unpaid'}">${TF.esc(TF.statusLabel(order.payment_status))}</span><small>${TF.esc(order.latest_payment_account_name || 'No account')}</small></td>
+            <td data-label="Status">${compactStatusPill(order)}${order.shortage_quantity ? `<small class="shortage-note">${TF.num(order.shortage_quantity)} short</small>` : ''}</td>
+            <td data-label="Tracking">${order.tracking_number ? `<code class="tracking-code">${TF.esc(order.tracking_number)}</code><small>${TF.esc(TF.statusLabel(order.fulfillment_method || 'Courier'))}</small>` : `<span class="tracking-empty">No tracking yet</span>${order.missing_tracking ? '<small class="missing-note">Required</small>' : ''}`}</td>
+            <td data-label="Date"><strong>${TF.formatDate(order.order_date)}</strong><small>${TF.esc(orderAge(order))}</small></td>
+            <td data-label="Actions">${orderActions(order)}</td>
+          </tr>`;
+        }).join('') || '<tr><td colspan="10" class="empty">No orders found.</td></tr>'}</tbody>
+      </table>`;
     updateBulkBar();
   }
 
   async function loadOrders() {
-    const [ordersResult, paymentsResult] = await Promise.all([
+    const [ordersResult, paymentsResult, itemsResult] = await Promise.all([
       TF.state.supa.from('v_daily_ops_orders_v15').select('*').order('order_date', { ascending: false }).order('created_at', { ascending: false }).limit(10000),
-      TF.state.supa.from('payments').select('order_id,payment_date,status').eq('status', 'verified').order('payment_date', { ascending: true }).limit(30000)
+      TF.state.supa.from('payments').select('order_id,payment_date,status').eq('status', 'verified').order('payment_date', { ascending: true }).limit(30000),
+      TF.state.supa.from('order_items').select('order_id,category,category_code,quantity').limit(50000)
     ]);
-    if (ordersResult.error || paymentsResult.error) throw ordersResult.error || paymentsResult.error;
+    if (ordersResult.error || paymentsResult.error || itemsResult.error) throw ordersResult.error || paymentsResult.error || itemsResult.error;
     orders = ordersResult.data || [];
+    orderItemsByOrder = new Map();
+    (itemsResult.data || []).forEach((item) => {
+      const current = orderItemsByOrder.get(item.order_id) || [];
+      current.push(item);
+      orderItemsByOrder.set(item.order_id, current);
+    });
     paymentDatesByOrder = new Map();
     (paymentsResult.data || []).forEach((payment) => {
       const dates = paymentDatesByOrder.get(payment.order_id) || [];
@@ -820,17 +883,23 @@
       return;
     }
     const button = event.target.closest('[data-action]');
-    if (!button) return;
-    const order = orders.find((row) => row.id === button.dataset.id);
-    if (!order) return;
-    try {
-      if (button.dataset.action === 'view') await openOrder(order.id);
-      if (button.dataset.action === 'pay') await openOrder(order.id, true, false);
-      if (button.dataset.action === 'packing') await quickStatus(order, 'packing');
-      if (button.dataset.action === 'ready') await quickStatus(order, 'ready_to_ship');
-      if (button.dataset.action === 'openTracking') await openOrder(order.id, false, true);
-    } catch (error) {
-      TF.fail(error, 'Order action failed');
+    if (button) {
+      const order = orders.find((row) => row.id === button.dataset.id);
+      if (!order) return;
+      try {
+        if (button.dataset.action === 'view') await openOrder(order.id);
+        if (button.dataset.action === 'pay') await openOrder(order.id, true, false);
+        if (button.dataset.action === 'packing') await quickStatus(order, 'packing');
+        if (button.dataset.action === 'ready') await quickStatus(order, 'ready_to_ship');
+        if (button.dataset.action === 'openTracking') await openOrder(order.id, false, true);
+      } catch (error) {
+        TF.fail(error, 'Order action failed');
+      }
+      return;
+    }
+    const row = event.target.closest('tr[data-open-row]');
+    if (row && !event.target.closest('a,button,input,select,textarea,details,summary')) {
+      await openOrder(row.dataset.openRow);
     }
   }
 
