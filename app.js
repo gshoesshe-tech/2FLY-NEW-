@@ -1,6 +1,10 @@
 (() => {
   'use strict';
   const TF = window.TwoFly;
+  const page = document.body.dataset.page || 'orders';
+  const has = (id) => Boolean(TF.$(id));
+  const isEntryPage = () => has('orderEntry');
+  const isListPage = () => has('ordersTable');
   let parsedItems = [];
   let orders = [];
   let activeOrder = null;
@@ -19,6 +23,57 @@
   function unitLabel(code, quantity) {
     if (code === 'EARRINGS') return quantity === 1 ? 'pair' : 'pairs';
     return 'pcs';
+  }
+
+
+  function isJnt(value) {
+    const method = typeof value === 'string' ? value : value?.fulfillment_method;
+    return String(method || '').toLowerCase() === 'jnt';
+  }
+
+  function hasFulfillment(value) {
+    const method = typeof value === 'string' ? value : value?.fulfillment_method;
+    return ['jnt', 'lalamove', 'walk_in'].includes(String(method || '').toLowerCase());
+  }
+
+  function fulfillmentText(value) {
+    const method = typeof value === 'string' ? value : value?.fulfillment_method;
+    if (method === 'jnt') return 'J&T';
+    if (method === 'lalamove') return 'Lalamove';
+    if (method === 'walk_in') return 'Walk-in / Pickup';
+    return 'Not selected';
+  }
+
+  function needsTracking(order) {
+    return isJnt(order) && ['ready_to_ship', 'shipped'].includes(order.status) && !String(order.tracking_number || '').trim();
+  }
+
+  function simpleStatus(order) {
+    if (order?.status === 'delivered') return 'delivered';
+    if (['packing', 'ready_to_ship', 'shipped'].includes(order?.status)) return 'processing';
+    return 'pending';
+  }
+
+  function simpleStatusFromRaw(status) {
+    if (status === 'delivered') return 'delivered';
+    if (['packing', 'ready_to_ship', 'shipped'].includes(status)) return 'processing';
+    return 'pending';
+  }
+
+  function simpleStatusLabel(value) {
+    return value === 'delivered' ? 'Delivered' : value === 'processing' ? 'Processing' : 'Pending';
+  }
+
+  function simpleStatusPill(order) {
+    const value = simpleStatus(order);
+    const tone = value === 'delivered' ? 'ok' : value === 'processing' ? 'info' : 'warn';
+    return `<span class="pill simple-order-status ${tone}">${simpleStatusLabel(value)}</span>`;
+  }
+
+  function fulfillmentBadge(value) {
+    const method = typeof value === 'string' ? value : value?.fulfillment_method;
+    const css = method === 'jnt' ? 'jnt' : method === 'lalamove' ? 'lalamove' : method === 'walk_in' ? 'walkin' : 'unselected';
+    return `<span class="fulfillment-badge ${css}">${TF.esc(fulfillmentText(method))}</span>`;
   }
 
   function facebookUrl(value) {
@@ -71,11 +126,11 @@
   }
 
   function fillBase() {
-    TF.$('paymentAccount').innerHTML = TF.accountOptions(true);
-    TF.$('addPaymentAccount').innerHTML = TF.accountOptions(true);
-    TF.$('orderDate').value = TF.today();
-    TF.$('paymentDate').value = TF.today();
-    TF.$('addPaymentDate').value = TF.today();
+    if (has('paymentAccount')) TF.$('paymentAccount').innerHTML = TF.accountOptions(true);
+    if (has('addPaymentAccount')) TF.$('addPaymentAccount').innerHTML = TF.accountOptions(true);
+    if (has('orderDate')) TF.$('orderDate').value = TF.today();
+    if (has('paymentDate')) TF.$('paymentDate').value = TF.today();
+    if (has('addPaymentDate')) TF.$('addPaymentDate').value = TF.today();
   }
 
   function parseOrder() {
@@ -314,19 +369,30 @@
     return window.confirm(`Possible duplicate order found:\n\n${list}\n\nSave this order anyway?`);
   }
 
-  async function saveOrder(confirmPayment) {
-    const button = confirmPayment ? TF.$('saveConfirmBtn') : TF.$('saveAwaitingBtn');
-    TF.setLoading(button, true, confirmPayment ? 'Confirming…' : 'Saving…');
+  function validatePaymentSubmission(method, accountId, reference, proofFile, amount) {
+    if (TF.num(amount) <= 0) throw new Error('Enter the amount sent.');
+    if (!accountId) throw new Error('Select the account where the customer says the payment entered.');
+    if (method === 'gcash' && !String(reference || '').trim()) throw new Error('GCash reference number is required.');
+    if (method === 'gcash' && !proofFile) throw new Error('Upload the GCash payment proof.');
+  }
+
+  async function saveOrder(submitPayment) {
+    const button = submitPayment ? TF.$('saveSubmitBtn') : TF.$('saveAwaitingBtn');
+    TF.setLoading(button, true, submitPayment ? 'Submitting…' : 'Saving…');
     try {
       validateItems();
-      if (confirmPayment && !TF.can('confirm_payments')) throw new Error('You do not have permission to confirm payments.');
       const amount = TF.num(TF.$('paymentAmount').value);
-      if (confirmPayment && amount <= 0) throw new Error('Enter the amount received.');
-      if (confirmPayment && !TF.$('paymentAccount').value) throw new Error('Select the account where the payment entered.');
+      if (submitPayment) validatePaymentSubmission(
+        TF.$('paymentMethod').value,
+        TF.$('paymentAccount').value,
+        TF.$('paymentReference').value,
+        TF.$('paymentProof').files?.[0],
+        amount
+      );
       const raw = TF.$('orderPaste').value.trim();
       const fingerprint = raw ? await TF.sha256(raw) : await TF.sha256(JSON.stringify({ phone: TF.$('orderPhone').value, date: TF.$('orderDate').value, items: parsedItems, total: productTotal() + shippingFee() }));
       if (!(await duplicateWarning(fingerprint))) return;
-      const proof = confirmPayment ? await uploadProof(TF.$('paymentProof')) : '';
+      const proof = submitPayment ? await uploadProof(TF.$('paymentProof')) : '';
       const order = {
         raw_order_form: raw,
         form_fingerprint: fingerprint,
@@ -348,25 +414,33 @@
         quantity: TF.num(item.quantity),
         unit_price: TF.num(item.unit_price)
       }));
-      const payment = confirmPayment ? {
+      const payment = submitPayment ? {
         payment_date: TF.$('paymentDate').value || TF.today(),
         amount,
         payment_method: TF.$('paymentMethod').value,
         cash_account_id: TF.$('paymentAccount').value,
         reference_number: TF.$('paymentReference').value.trim(),
-        proof_storage_path: proof
+        proof_storage_path: proof,
+        notes: null
       } : null;
-      const result = await TF.state.supa.rpc('create_daily_order_v14', {
-        p_order: order,
-        p_items: items,
-        p_payment: payment,
-        p_confirm_payment: confirmPayment
-      });
+      const result = submitPayment
+        ? await TF.state.supa.rpc('create_order_with_payment_submission_v16', { p_order: order, p_items: items, p_payment: payment })
+        : await TF.state.supa.rpc('create_daily_order_v14', { p_order: order, p_items: items, p_payment: null, p_confirm_payment: false });
       if (result.error) throw result.error;
-      TF.toast(confirmPayment ? 'Order saved and payment confirmed' : 'Order saved as Awaiting Payment');
+      TF.toast(submitPayment ? 'Order saved and payment sent for verification' : 'Order saved as Awaiting Payment');
+      const savedOrderId = result.data?.order_id || '';
+      const savedOrderNumber = result.data?.order_number || '';
       resetForm();
-      await loadOrders();
-      if (result.data?.order_id) await openOrder(result.data.order_id);
+      if (has('orderSaveSuccess')) {
+        TF.$('orderEntry').classList.add('hidden');
+        TF.$('orderSaveSuccess').classList.remove('hidden');
+        TF.$('savedOrderMessage').textContent = savedOrderNumber ? `${savedOrderNumber} is now recorded.` : 'The order is now recorded.';
+        TF.$('viewSavedOrderBtn').href = savedOrderId ? `./orderpage.html?open=${encodeURIComponent(savedOrderId)}` : './orderpage.html';
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      } else {
+        await loadOrders();
+        if (savedOrderId && has('orderDialog')) await openOrder(savedOrderId);
+      }
     } catch (error) {
       TF.fail(error, 'Order not saved');
     } finally {
@@ -375,7 +449,10 @@
   }
 
   function resetForm() {
+    if (!isEntryPage()) return;
     editingOrderId = null;
+    if (has('orderSaveSuccess')) TF.$('orderSaveSuccess').classList.add('hidden');
+    TF.$('orderEntry').classList.remove('hidden');
     parsedItems = [];
     ['orderPaste', 'orderCustomer', 'orderPhone', 'orderFacebook', 'orderAddress', 'orderNotes', 'paymentReference'].forEach((id) => { TF.$(id).value = ''; });
     TF.$('paymentProof').value = '';
@@ -390,7 +467,7 @@
     TF.$('parseWarnings').classList.add('hidden');
     TF.$('editOrderBanner').classList.add('hidden');
     TF.$('saveAwaitingBtn').classList.remove('hidden');
-    TF.$('saveConfirmBtn').classList.toggle('hidden', !TF.can('confirm_payments'));
+    TF.$('saveSubmitBtn').classList.toggle('hidden', !TF.can('create_orders'));
     TF.$('saveEditBtn').classList.add('hidden');
     ['paymentDate', 'paymentAmount', 'paymentMethod', 'paymentAccount', 'paymentReference', 'paymentProof', 'orderDate'].forEach((id) => { TF.$(id).disabled = false; });
     renderItems();
@@ -399,6 +476,10 @@
 
   async function startEdit(order) {
     if (!TF.can('edit_orders')) throw new Error('You do not have permission to edit orders.');
+    if (!isEntryPage()) {
+      window.location.href = `./new-order.html?edit=${encodeURIComponent(order.id)}`;
+      return;
+    }
     if (['packing', 'ready_to_ship', 'shipped', 'delivered', 'cancelled', 'refunded'].includes(order.status)) throw new Error('Items cannot be changed after inventory has been committed. Status and tracking can still be updated.');
     const result = await TF.state.supa.from('order_items').select('*').eq('order_id', order.id).order('line_number');
     if (result.error) throw result.error;
@@ -427,12 +508,12 @@
     TF.$('editOrderBanner').classList.remove('hidden');
     TF.$('editOrderLabel').textContent = `Editing ${order.order_number}. Payment records are not changed.`;
     TF.$('saveAwaitingBtn').classList.add('hidden');
-    TF.$('saveConfirmBtn').classList.add('hidden');
+    TF.$('saveSubmitBtn').classList.add('hidden');
     TF.$('saveEditBtn').classList.remove('hidden');
     ['paymentDate', 'paymentAmount', 'paymentMethod', 'paymentAccount', 'paymentReference', 'paymentProof'].forEach((id) => { TF.$(id).disabled = true; });
     renderItems();
     updateConditions();
-    TF.$('orderDialog').close();
+    if (has('orderDialog') && TF.$('orderDialog').open) TF.$('orderDialog').close();
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
@@ -466,8 +547,17 @@
       });
       if (shippingResult.error) throw shippingResult.error;
       TF.toast('Order changes saved');
+      const savedId = editingOrderId;
       resetForm();
-      await loadOrders();
+      if (has('orderSaveSuccess')) {
+        TF.$('orderEntry').classList.add('hidden');
+        TF.$('orderSaveSuccess').classList.remove('hidden');
+        TF.$('savedOrderMessage').textContent = 'Order changes were saved successfully.';
+        TF.$('viewSavedOrderBtn').href = `./orderpage.html?open=${encodeURIComponent(savedId)}`;
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      } else {
+        await loadOrders();
+      }
     } catch (error) {
       TF.fail(error, 'Order changes not saved');
     } finally {
@@ -476,11 +566,7 @@
   }
 
   function statusGroup(order) {
-    if (['cancelled', 'refunded'].includes(order.status)) return 'cancelled';
-    if (order.status === 'delivered') return 'delivered';
-    if (order.status === 'shipped') return 'shipped';
-    if (['draft', 'payment_review'].includes(order.status)) return 'pending';
-    return 'processing';
+    return simpleStatus(order);
   }
 
   function filterRange() {
@@ -506,6 +592,7 @@
       start_date: TF.$('orderStartDate').value,
       end_date: TF.$('orderEndDate').value,
       status: TF.$('orderFilter').value,
+      payment: TF.$('orderPaymentFilter').value,
       fulfillment: TF.$('orderFulfillmentFilter').value,
       sort: TF.$('orderSort').value
     };
@@ -519,6 +606,7 @@
     assign('orderStartDate', state.start_date || '');
     assign('orderEndDate', state.end_date || '');
     assign('orderFilter', state.status || 'all');
+    assign('orderPaymentFilter', state.payment || 'all');
     assign('orderFulfillmentFilter', state.fulfillment || 'all');
     assign('orderSort', state.sort || 'newest_order');
     updateOrderDateControls();
@@ -530,6 +618,7 @@
   }
 
   function renderSavedFilters() {
+    if (!has('savedFiltersSelect')) return;
     const filters = savedFilters();
     TF.$('savedFiltersSelect').innerHTML = '<option value="">Saved filters</option>' + filters.map((filter, index) => `<option value="${index}">${TF.esc(filter.name)}</option>`).join('');
   }
@@ -571,24 +660,20 @@
 
   function filterRows() {
     const query = TF.$('orderSearch').value.trim().toLowerCase();
-    const filter = TF.$('orderFilter').value;
+    const statusFilter = TF.$('orderFilter').value;
+    const paymentFilter = TF.$('orderPaymentFilter').value;
     const fulfillment = TF.$('orderFulfillmentFilter').value;
     const { start, end } = filterRange();
     const rows = orders.filter((order) => {
-      const searchMatch = !query || [order.order_number, order.customer_name, order.phone, order.facebook_profile, order.tracking_number, order.latest_payment_account_name, order.status].some((value) => String(value || '').toLowerCase().includes(query));
+      const searchMatch = !query || [order.order_number, order.customer_name, order.phone, order.facebook_profile, order.tracking_number, order.latest_payment_account_name, order.status, fulfillmentText(order)].some((value) => String(value || '').toLowerCase().includes(query));
       if (!searchMatch || !dateMatch(order, start, end)) return false;
       if (fulfillment !== 'all' && order.fulfillment_method !== fulfillment) return false;
-      if (filter === 'all') return true;
-      if (filter === 'today') return order.order_date === TF.today();
-      if (filter === 'pending') return statusGroup(order) === 'pending';
-      if (filter === 'processing') return statusGroup(order) === 'processing';
-      if (filter === 'awaiting') return ['unpaid', 'partial'].includes(order.payment_status) && !['cancelled', 'refunded'].includes(order.status);
-      if (filter === 'paid') return ['paid', 'overpaid'].includes(order.payment_status) && !['cancelled', 'refunded'].includes(order.status);
-      if (filter === 'packing') return ['confirmed', 'ready_to_pack', 'packing'].includes(order.status);
-      if (filter === 'missing_tracking') return order.missing_tracking;
-      if (filter === 'paid_late') return order.paid_not_shipped_alert;
-      if (filter === 'cancelled') return ['cancelled', 'refunded'].includes(order.status);
-      return order.status === filter;
+      if (statusFilter !== 'all' && simpleStatus(order) !== statusFilter) return false;
+      if (paymentFilter === 'verification' && TF.num(order.pending_payment_count) <= 0) return false;
+      if (paymentFilter === 'unpaid' && (TF.num(order.pending_payment_count) > 0 || order.payment_status !== 'unpaid')) return false;
+      if (paymentFilter === 'partial' && (TF.num(order.pending_payment_count) > 0 || order.payment_status !== 'partial')) return false;
+      if (paymentFilter === 'paid' && !['paid', 'overpaid'].includes(order.payment_status)) return false;
+      return true;
     });
     return sortRows(rows);
   }
@@ -603,23 +688,11 @@
   }
 
   function primaryStatus(order) {
-    if (['cancelled', 'refunded', 'delivered', 'shipped', 'ready_to_ship', 'packing', 'waiting_stock'].includes(order.status)) return order.status;
-    if (order.payment_status === 'partial') return 'partial';
-    if (order.payment_status === 'unpaid') return 'draft';
-    if (['paid', 'overpaid'].includes(order.payment_status)) return 'confirmed';
-    return order.status || 'draft';
+    return simpleStatus(order);
   }
 
   function compactStatusPill(order) {
-    const key = primaryStatus(order);
-    const className = ['confirmed', 'ready_to_ship', 'delivered'].includes(key)
-      ? 'ok'
-      : ['packing', 'waiting_stock', 'shipped', 'partial'].includes(key)
-        ? 'warn'
-        : ['cancelled', 'refunded', 'unpaid'].includes(key)
-          ? 'danger'
-          : '';
-    return `<span class="pill order-status-pill ${className}">${TF.esc(TF.statusLabel(key))}</span>`;
+    return simpleStatusPill(order);
   }
 
   function categorySummary(order) {
@@ -640,17 +713,38 @@
   function quickMenuActions(order) {
     const actions = [];
     if (order.facebook_profile) actions.push(`<a href="${TF.esc(facebookUrl(order.facebook_profile))}" target="_blank" rel="noopener noreferrer">Open Facebook</a>`);
-    if (TF.can('confirm_payments') && ['unpaid', 'partial'].includes(order.payment_status) && !['cancelled', 'refunded'].includes(order.status)) actions.push(`<button type="button" data-action="pay" data-id="${order.id}">Confirm Payment</button>`);
-    if (TF.can('update_tracking')) {
-      if (['confirmed', 'ready_to_pack'].includes(order.status) || (order.status === 'waiting_stock' && TF.num(order.shortage_quantity) === 0)) actions.push(`<button type="button" data-action="packing" data-id="${order.id}">Start Packing</button>`);
-      if (order.status === 'packing') actions.push(`<button type="button" data-action="ready" data-id="${order.id}">Ready to Ship</button>`);
-      if (['ready_to_ship', 'shipped'].includes(order.status)) actions.push(`<button type="button" data-action="openTracking" data-id="${order.id}">${order.tracking_number ? 'Edit Tracking' : 'Add Tracking'}</button>`);
+    if (TF.num(order.pending_payment_count) > 0 && TF.can('confirm_payments')) actions.push(`<button type="button" data-action="pay" data-id="${order.id}">Review Payment</button>`);
+    if (!TF.num(order.pending_payment_count) && (TF.can('create_orders') || TF.can('edit_orders')) && ['unpaid', 'partial'].includes(order.payment_status) && !['cancelled', 'refunded'].includes(order.status)) actions.push(`<button type="button" data-action="pay" data-id="${order.id}">Submit Payment</button>`);
+    if (TF.can('update_tracking') && simpleStatus(order) === 'pending' && hasFulfillment(order) && ['paid', 'overpaid'].includes(order.payment_status) && TF.num(order.shortage_quantity) <= 0) actions.push(`<button type="button" data-action="processing" data-id="${order.id}">Start Processing</button>`);
+    if (TF.can('update_tracking') && simpleStatus(order) === 'processing') {
+      if (isJnt(order) && !order.tracking_number) actions.push(`<button type="button" data-action="openTracking" data-id="${order.id}">Add J&T Tracking</button>`);
+      else actions.push(`<button type="button" data-action="complete" data-id="${order.id}">Mark Delivered</button>`);
     }
+    if (isJnt(order) && order.tracking_number) actions.push(`<button type="button" data-action="openTracking" data-id="${order.id}">Edit J&T Tracking</button>`);
     return actions.join('') || '<span class="order-menu-empty">No quick actions</span>';
+  }
+
+  function primaryOrderAction(order) {
+    if (['cancelled', 'refunded'].includes(order.status)) return `<span class="action-state cancelled">Cancelled</span>`;
+    if (simpleStatus(order) === 'delivered') return `<span class="action-state completed">Completed</span>`;
+    if (TF.num(order.pending_payment_count) > 0) return `<button class="btn primary small" data-action="pay" data-id="${order.id}">Review Payment</button>`;
+    if ((TF.can('create_orders') || TF.can('edit_orders')) && ['unpaid', 'partial'].includes(order.payment_status)) return `<button class="btn primary small" data-action="pay" data-id="${order.id}">Submit Payment</button>`;
+    if (!TF.can('update_tracking')) return `<button class="btn small order-view-btn" data-action="view" data-id="${order.id}">View</button>`;
+    if (simpleStatus(order) === 'pending') {
+      if (!hasFulfillment(order)) return `<button class="btn primary small" data-action="view" data-id="${order.id}">Set Fulfillment</button>`;
+      if (TF.num(order.shortage_quantity) > 0) return `<button class="btn small order-view-btn" data-action="view" data-id="${order.id}">View Order</button>`;
+      return `<button class="btn primary small" data-action="processing" data-id="${order.id}">Start Processing</button>`;
+    }
+    if (simpleStatus(order) === 'processing') {
+      if (isJnt(order) && !order.tracking_number) return `<button class="btn primary small" data-action="openTracking" data-id="${order.id}">Add Tracking</button>`;
+      return `<button class="btn primary small" data-action="complete" data-id="${order.id}">Mark Delivered</button>`;
+    }
+    return `<button class="btn small order-view-btn" data-action="view" data-id="${order.id}">View</button>`;
   }
 
   function orderActions(order) {
     return `<div class="clean-order-actions">
+      ${primaryOrderAction(order)}
       <button class="btn small order-view-btn" data-action="view" data-id="${order.id}">View</button>
       <details class="order-more-menu">
         <summary aria-label="More actions">⋮</summary>
@@ -660,48 +754,58 @@
   }
 
   function updateBulkBar() {
+    if (!has('bulkOrderBar')) return;
     const count = selectedOrderIds.size;
     TF.$('bulkOrderBar').classList.toggle('hidden', count === 0);
     TF.$('bulkSelectedCount').textContent = `${count} selected`;
   }
 
   function renderOrders() {
+    if (!isListPage()) return;
     const rows = filterRows();
     [...selectedOrderIds].forEach((id) => { if (!orders.some((order) => order.id === id)) selectedOrderIds.delete(id); });
     TF.$('orderResultCount').textContent = `${rows.length.toLocaleString()} order${rows.length === 1 ? '' : 's'}`;
     TF.$('ordersTable').className = 'table-wrap orders-clean-table-wrap';
     TF.$('ordersTable').innerHTML = `
-      <table class="orders-clean-table">
+      <table class="orders-clean-table simple-orders-table">
         <colgroup>
-          <col class="col-select"><col class="col-order"><col class="col-customer"><col class="col-items"><col class="col-total"><col class="col-payment"><col class="col-status"><col class="col-tracking"><col class="col-date"><col class="col-actions">
+          <col class="col-select"><col class="col-order"><col class="col-customer"><col class="col-fulfillment"><col class="col-status"><col class="col-payment"><col class="col-items"><col class="col-total"><col class="col-tracking"><col class="col-date"><col class="col-actions">
         </colgroup>
         <thead><tr>
           <th><input id="selectAllOrders" type="checkbox" aria-label="Select all visible orders" ${rows.length && rows.every((row) => selectedOrderIds.has(row.id)) ? 'checked' : ''}></th>
-          <th>Order</th><th>Customer</th><th>Items</th><th>Total</th><th>Payment</th><th>Status</th><th>Tracking</th><th>Date</th><th>Actions</th>
+          <th>Order</th><th>Customer</th><th>Fulfillment</th><th>Status</th><th>Payment</th><th>Items</th><th>Total</th><th>Tracking</th><th>Date</th><th>Action</th>
         </tr></thead>
         <tbody>${rows.map((order) => {
-          const alert = order.paid_not_shipped_alert || order.missing_tracking;
+          const alert = order.paid_not_shipped_alert || needsTracking(order);
           const paid = ['paid', 'overpaid'].includes(order.payment_status);
-          return `<tr data-open-row="${order.id}" class="clean-order-row ${alert ? 'attention-row' : ''}">
+          return `<tr data-open-row="${order.id}" class="clean-order-row ${alert ? 'attention-row' : ''} ${['cancelled', 'refunded'].includes(order.status) ? 'cancelled-order-row' : ''}">
             <td data-label="Select"><input type="checkbox" data-select-order="${order.id}" ${selectedOrderIds.has(order.id) ? 'checked' : ''}></td>
-            <td data-label="Order"><strong class="order-number-text">${TF.esc(order.order_number)}</strong><small>${TF.formatDate(order.order_date)}</small></td>
+            <td data-label="Order"><strong class="order-number-text">${TF.esc(order.order_number)}</strong><small>${TF.formatDate(order.order_date)}</small>${['cancelled', 'refunded'].includes(order.status) ? '<span class="cancelled-mini">Cancelled</span>' : ''}</td>
             <td data-label="Customer"><strong class="customer-name-text">${TF.esc(order.customer_name)}</strong><div class="customer-subline"><span>${TF.esc(order.phone || 'No phone')}</span>${order.facebook_profile ? `<a class="facebook-mini-link" href="${TF.esc(facebookUrl(order.facebook_profile))}" target="_blank" rel="noopener noreferrer" title="Open Facebook profile">f</a>` : ''}</div></td>
+            <td data-label="Fulfillment">${fulfillmentBadge(order)}</td>
+            <td data-label="Status">${simpleStatusPill(order)}</td>
+            <td data-label="Payment">${TF.num(order.pending_payment_count) > 0
+              ? `<span class="payment-state is-submitted">For Verification</span><small>${TF.esc(order.latest_submission_account_name || 'Submitted account')}</small>`
+              : `<span class="payment-state ${paid ? 'is-paid' : order.payment_status === 'partial' ? 'is-partial' : 'is-unpaid'}">${TF.esc(TF.statusLabel(order.payment_status))}</span><small>${TF.esc(order.latest_payment_account_name || 'No account')}</small>`}</td>
             <td data-label="Items"><strong>${TF.num(order.total_quantity).toLocaleString()} ${TF.num(order.total_quantity) === 1 ? 'pc' : 'pcs'}</strong><small title="${TF.esc(categorySummary(order))}">${TF.esc(categorySummary(order))}</small></td>
             <td data-label="Total"><strong>${TF.money(order.total_due)}</strong><small>${paid ? `${TF.money(order.verified_total_paid)} paid` : `${TF.money(order.verified_total_paid)} received`}</small></td>
-            <td data-label="Payment"><span class="payment-state ${paid ? 'is-paid' : order.payment_status === 'partial' ? 'is-partial' : 'is-unpaid'}">${TF.esc(TF.statusLabel(order.payment_status))}</span><small>${TF.esc(order.latest_payment_account_name || 'No account')}</small></td>
-            <td data-label="Status">${compactStatusPill(order)}${order.shortage_quantity ? `<small class="shortage-note">${TF.num(order.shortage_quantity)} short</small>` : ''}</td>
-            <td data-label="Tracking">${order.tracking_number ? `<code class="tracking-code">${TF.esc(order.tracking_number)}</code><small>${TF.esc(TF.statusLabel(order.fulfillment_method || 'Courier'))}</small>` : `<span class="tracking-empty">No tracking yet</span>${order.missing_tracking ? '<small class="missing-note">Required</small>' : ''}`}</td>
+            <td data-label="Tracking">${isJnt(order) ? (order.tracking_number ? `<code class="tracking-code">${TF.esc(order.tracking_number)}</code>` : `<span class="tracking-empty">No tracking yet</span>`) : `<span class="tracking-not-required">Not required</span>`}</td>
             <td data-label="Date"><strong>${TF.formatDate(order.order_date)}</strong><small>${TF.esc(orderAge(order))}</small></td>
-            <td data-label="Actions">${orderActions(order)}</td>
+            <td data-label="Action">${orderActions(order)}</td>
           </tr>`;
-        }).join('') || '<tr><td colspan="10" class="empty">No orders found.</td></tr>'}</tbody>
+        }).join('') || '<tr><td colspan="11" class="empty">No orders found.</td></tr>'}</tbody>
       </table>`;
     updateBulkBar();
   }
 
   async function loadOrders() {
+    const params = new URLSearchParams(location.search);
+    const editId = params.get('edit');
+    const openId = params.get('open');
+    const needsData = isListPage() || Boolean(editId) || Boolean(openId) || has('orderDialog');
+    if (!needsData) return;
     const [ordersResult, paymentsResult, itemsResult] = await Promise.all([
-      TF.state.supa.from('v_daily_ops_orders_v15').select('*').order('order_date', { ascending: false }).order('created_at', { ascending: false }).limit(10000),
+      TF.state.supa.from('v_daily_ops_orders_v16').select('*').order('order_date', { ascending: false }).order('created_at', { ascending: false }).limit(10000),
       TF.state.supa.from('payments').select('order_id,payment_date,status').eq('status', 'verified').order('payment_date', { ascending: true }).limit(30000),
       TF.state.supa.from('order_items').select('order_id,category_id,product_name,sku,quantity').limit(50000)
     ]);
@@ -719,11 +823,16 @@
       if (!dates.includes(payment.payment_date)) dates.push(payment.payment_date);
       paymentDatesByOrder.set(payment.order_id, dates.sort());
     });
-    renderOrders();
-    const params = new URLSearchParams(location.search);
-    const openId = params.get('open');
+    if (isListPage()) renderOrders();
+    if (editId && isEntryPage()) {
+      const order = orders.find((row) => row.id === editId);
+      history.replaceState({}, '', './new-order.html');
+      if (!order) throw new Error('Order to edit was not found.');
+      await startEdit(order);
+      return;
+    }
     const focus = params.get('focus');
-    if (openId) {
+    if (openId && has('orderDialog')) {
       history.replaceState({}, '', './orderpage.html');
       await openOrder(openId, focus === 'payment', focus === 'tracking');
     }
@@ -734,29 +843,78 @@
   }
 
   function customerUpdate(order) {
-    const tracking = order.tracking_number ? `\nTracking number: ${order.tracking_number}` : '';
-    if (order.status === 'waiting_stock') return `Hi! Confirmed na po ang payment for ${order.order_number}. Waiting lang po tayo sa requested stock/design. We’ll update you once ready for packing.`;
-    if (['confirmed', 'ready_to_pack'].includes(order.status)) return `Hi! Confirmed na po ang payment for ${order.order_number}. Ready na po ang stock and naka-queue na for packing.`;
-    if (order.status === 'packing') return `Hi! Currently being packed na po ang order ${order.order_number}. We’ll send the tracking number once available.`;
-    if (order.status === 'ready_to_ship') return `Hi! Ready to ship na po ang order ${order.order_number}. Waiting na lang po sa courier handoff and tracking number.`;
-    if (order.status === 'shipped') return `Hi! Shipped na po ang order ${order.order_number} through ${String(order.fulfillment_method || '').toUpperCase().replace('_', '-')}.${tracking}\nThank you!`;
-    if (order.status === 'delivered') return `Hi! Marked delivered na po ang order ${order.order_number}.${tracking}\nThank you for ordering!`;
-    if (['unpaid', 'partial'].includes(order.payment_status)) return `Hi! Naka-record na po ang order ${order.order_number}. Payment status: ${TF.statusLabel(order.payment_status)}.`;
-    return `Hi! Update for order ${order.order_number}: ${TF.statusLabel(order.status)}.`;
+    const status = simpleStatus(order);
+    const method = fulfillmentText(order);
+    const tracking = isJnt(order) && order.tracking_number ? `
+Tracking number: ${order.tracking_number}` : '';
+    if (TF.num(order.pending_payment_count) > 0) return `Hi! Nareceive na po namin ang payment details for ${order.order_number}. For verification pa po ito. We’ll update you once confirmed.`;
+    if (status === 'pending') return `Hi! Pending pa po ang order ${order.order_number}. We’ll update you once processing na.`;
+    if (status === 'processing') return isJnt(order)
+      ? `Hi! Processing na po ang order ${order.order_number} for J&T.${tracking}`
+      : `Hi! Processing na po ang order ${order.order_number} for ${method}. No tracking number is needed for this method.`;
+    return isJnt(order)
+      ? `Hi! Delivered na po ang order ${order.order_number}.${tracking}
+Thank you for ordering!`
+      : `Hi! Completed na po ang order ${order.order_number} through ${method}. Thank you for ordering!`;
+  }
+
+  function updateOperationTrackingRule() {
+    if (!has('operationMethod') || !has('operationTracking')) return;
+    const jnt = isJnt(TF.$('operationMethod').value);
+    const input = TF.$('operationTracking');
+    input.disabled = !jnt;
+    input.placeholder = jnt ? 'Enter J&T tracking when available' : 'Not required for this method';
+    if (!jnt) input.value = '';
+    TF.$('operationTrackingWrap')?.classList.toggle('tracking-disabled-field', !jnt);
+    const help = TF.$('operationTrackingHelp');
+    if (help) help.textContent = jnt ? 'Only J&T orders use a tracking number.' : `${fulfillmentText(TF.$('operationMethod').value)} orders do not need a tracking number.`;
+  }
+
+  async function proofButton(path) {
+    if (!path) return '';
+    const result = await TF.state.supa.storage.from('payment-proofs').createSignedUrl(path, 3600);
+    if (result.error || !result.data?.signedUrl) return '<span class="muted">Proof unavailable</span>';
+    return `<a class="btn small" href="${TF.esc(result.data.signedUrl)}" target="_blank" rel="noopener noreferrer">View Proof</a>`;
+  }
+
+  async function renderPaymentSubmissions(payments) {
+    const pending = payments.filter((payment) => payment.status === 'submitted');
+    TF.$('pendingPaymentCount').textContent = `${pending.length} waiting`;
+    const cards = [];
+    for (const payment of payments) {
+      const proof = await proofButton(payment.proof_storage_path);
+      const reviewActions = payment.status === 'submitted' && payment.can_current_user_review
+        ? `<button class="btn primary small" data-review-payment="confirm" data-payment-id="${payment.payment_id}">Confirm</button><button class="btn danger small" data-review-payment="reject" data-payment-id="${payment.payment_id}">Reject</button>`
+        : '';
+      cards.push(`<article class="payment-submission-card ${TF.esc(payment.status)}">
+        <div class="payment-submission-head"><div><strong>${TF.money(payment.amount)}</strong><span>${TF.statusPill(payment.status)}</span></div><small>${TF.formatDate(payment.payment_date)} • ${TF.esc(payment.cash_account_name || 'Unknown account')}</small></div>
+        <div class="payment-submission-grid">
+          <div><span>Reference</span><strong>${TF.esc(payment.reference_number || '—')}</strong></div>
+          <div><span>Submitted by</span><strong>${TF.esc(payment.submitted_by_name || payment.submitted_by_email || '—')}</strong></div>
+          <div><span>Submitted</span><strong>${TF.formatDateTime(payment.submitted_at)}</strong></div>
+          <div><span>Reviewed by</span><strong>${TF.esc(payment.reviewed_by_name || payment.reviewed_by_email || '—')}</strong></div>
+        </div>
+        ${payment.notes ? `<p class="payment-submission-note">${TF.esc(payment.notes)}</p>` : ''}
+        ${payment.rejection_reason ? `<div class="notice danger">Rejected: ${TF.esc(payment.rejection_reason)}</div>` : ''}
+        <div class="payment-submission-actions">${proof}${reviewActions}</div>
+      </article>`);
+    }
+    TF.$('paymentSubmissionsList').innerHTML = cards.join('') || '<div class="empty">No payment details submitted yet.</div>';
   }
 
   async function openOrder(id, focusPayment = false, focusTracking = false) {
     const order = orders.find((row) => row.id === id);
     if (!order) return;
-    const [itemsResult, activityResult] = await Promise.all([
+    const [itemsResult, activityResult, paymentsResult] = await Promise.all([
       TF.state.supa.from('order_items').select('*').eq('order_id', id).order('line_number'),
-      TF.state.supa.from('v_order_activity_v14').select('*').eq('order_id', id).order('created_at', { ascending: false }).limit(100)
+      TF.state.supa.from('v_order_activity_v14').select('*').eq('order_id', id).order('created_at', { ascending: false }).limit(100),
+      TF.state.supa.from('v_payment_verification_queue_v16').select('*').eq('order_id', id).order('submitted_at', { ascending: false, nullsFirst: false }).order('payment_date', { ascending: false })
     ]);
-    if (itemsResult.error || activityResult.error) throw itemsResult.error || activityResult.error;
+    if (itemsResult.error || activityResult.error || paymentsResult.error) throw itemsResult.error || activityResult.error || paymentsResult.error;
     activeOrder = order;
     activeItems = summarizeStoredItems(itemsResult.data || []);
     TF.$('detailTitle').textContent = `${order.order_number} — ${order.customer_name}`;
-    TF.$('detailStatus').innerHTML = `${TF.statusPill(order.payment_status)} ${TF.statusPill(order.status)}`;
+    TF.$('detailStatus').innerHTML = `${simpleStatusPill(order)} ${TF.num(order.pending_payment_count) > 0 ? TF.statusPill('submitted') : TF.statusPill(order.payment_status)}`;
     TF.$('detailCustomer').textContent = order.customer_name || '—';
     TF.$('detailPhone').textContent = order.phone || '—';
     TF.$('detailFacebook').innerHTML = order.facebook_profile ? `${TF.esc(order.facebook_profile)}<br>${facebookLink(order.facebook_profile, 'Open Facebook / Messenger')}` : '—';
@@ -766,56 +924,99 @@
     TF.$('detailTotal').textContent = TF.money(order.total_due);
     TF.$('detailPaid').textContent = TF.money(order.verified_total_paid);
     TF.$('detailAccount').textContent = order.latest_payment_account_name || '—';
-    TF.$('detailTracking').textContent = order.tracking_number || 'Not available';
+    if (has('detailFulfillment')) TF.$('detailFulfillment').innerHTML = fulfillmentBadge(order);
+    TF.$('detailTracking').textContent = isJnt(order) ? (order.tracking_number || 'Not available yet') : 'Not required';
     TF.$('detailItems').innerHTML = activeItems.map((item) => `<div class="simple-line"><strong>${TF.esc(item.category)}</strong><span>${TF.num(item.quantity)} ${unitLabel(item.category_code, TF.num(item.quantity))} • ${TF.money(item.line_total)}</span></div>`).join('') || '<div class="empty">No items.</div>';
     const balance = Math.max(TF.num(order.remaining_balance), 0);
-    TF.$('detailBalance').textContent = `Balance ${TF.money(balance)}`;
-    TF.$('addPaymentSection').classList.toggle('hidden', !TF.can('confirm_payments') || balance <= 0 || ['cancelled', 'refunded'].includes(order.status));
+    TF.$('detailBalance').textContent = `Verified balance ${TF.money(balance)}`;
+    TF.$('addPaymentSection').classList.toggle('hidden', !(TF.can('create_orders') || TF.can('edit_orders') || TF.can('confirm_payments')) || balance <= 0 || ['cancelled', 'refunded', 'delivered'].includes(order.status));
     TF.$('addPaymentAmount').value = balance > 0 ? balance.toFixed(2) : '';
-    TF.$('addPaymentDate').value = order.latest_payment_date || order.order_date || TF.today();
-    TF.$('operationStatus').value = order.status;
+    TF.$('addPaymentDate').value = TF.today();
+    TF.$('addPaymentReference').value = '';
+    TF.$('addPaymentProof').value = '';
+    TF.$('addPaymentNotes').value = '';
+    await renderPaymentSubmissions(paymentsResult.data || []);
+    TF.$('operationStatus').value = simpleStatus(order);
     TF.$('operationMethod').value = order.fulfillment_method || 'unselected';
-    TF.$('operationTracking').value = order.tracking_number || '';
+    TF.$('operationTracking').value = isJnt(order) ? (order.tracking_number || '') : '';
+    updateOperationTrackingRule();
     TF.$('operationShippedDate').value = order.shipped_at ? String(order.shipped_at).slice(0, 10) : '';
     TF.$('operationDeliveredDate').value = order.delivered_at ? String(order.delivered_at).slice(0, 10) : '';
     TF.$('operationCourierCost').value = order.courier_cost_finalized ? TF.num(order.actual_courier_cost).toFixed(2) : '';
     TF.$('operationCustomerNote').value = order.customer_update_note || '';
     TF.$('operationStatusNote').value = '';
     TF.$('customerUpdatePreview').textContent = customerUpdate(order);
-    TF.$('activityList').innerHTML = (activityResult.data || []).map((activity) => `<div class="timeline-item"><span></span><div><strong>${TF.esc(activity.action.replaceAll('_', ' '))}</strong><small>${TF.formatDateTime(activity.created_at)} • ${TF.esc(activity.full_name || activity.email || 'System')}</small>${activity.old_status !== activity.new_status ? `<p>${TF.esc(TF.statusLabel(activity.old_status))} → ${TF.esc(TF.statusLabel(activity.new_status))}</p>` : ''}</div></div>`).join('') || '<div class="empty">No activity history yet.</div>';
+    TF.$('activityList').innerHTML = (activityResult.data || []).map((activity) => `<div class="timeline-item"><span></span><div><strong>${TF.esc(activity.action.replaceAll('_', ' '))}</strong><small>${TF.formatDateTime(activity.created_at)} • ${TF.esc(activity.full_name || activity.email || 'System')}</small>${activity.old_status !== activity.new_status && simpleStatusFromRaw(activity.old_status) !== simpleStatusFromRaw(activity.new_status) ? `<p>${simpleStatusLabel(simpleStatusFromRaw(activity.old_status))} → ${simpleStatusLabel(simpleStatusFromRaw(activity.new_status))}</p>` : ''}</div></div>`).join('') || '<div class="empty">No activity history yet.</div>';
     TF.$('detailRaw').textContent = order.raw_order_form || 'No original form saved.';
     TF.$('editOrderBtn').classList.toggle('hidden', !TF.can('edit_orders') || ['packing', 'ready_to_ship', 'shipped', 'delivered', 'cancelled', 'refunded'].includes(order.status));
     TF.$('cancelOrderBtn').classList.toggle('hidden', !TF.isManagement() || ['cancelled', 'refunded', 'delivered'].includes(order.status));
     TF.$('orderDialog').showModal();
-    if (focusPayment && !TF.$('addPaymentSection').classList.contains('hidden')) TF.$('addPaymentAmount').focus();
-    if (focusTracking) TF.$('operationTracking').focus();
+    if (focusPayment) {
+      const pendingCard = TF.$('paymentSubmissionsList').querySelector('.payment-submission-card.submitted');
+      if (pendingCard) pendingCard.scrollIntoView({ block: 'center' });
+      else if (!TF.$('addPaymentSection').classList.contains('hidden')) TF.$('addPaymentAmount').focus();
+    }
+    if (focusTracking) { if (isJnt(order)) TF.$('operationTracking').focus(); else TF.$('operationStatus').focus(); }
   }
 
-  async function confirmAdditionalPayment(event) {
+  async function submitAdditionalPayment(event) {
     event.preventDefault();
     if (!activeOrder) return;
     const button = event.submitter;
-    TF.setLoading(button, true, 'Confirming…');
+    TF.setLoading(button, true, 'Submitting…');
     try {
-      if (!TF.$('addPaymentAccount').value) throw new Error('Select the account where the payment entered.');
+      validatePaymentSubmission(
+        TF.$('addPaymentMethod').value,
+        TF.$('addPaymentAccount').value,
+        TF.$('addPaymentReference').value,
+        TF.$('addPaymentProof').files?.[0],
+        TF.$('addPaymentAmount').value
+      );
       const proof = await uploadProof(TF.$('addPaymentProof'));
-      const result = await TF.state.supa.rpc('confirm_order_payment_v14', {
-        p_order_id: activeOrder.id,
+      const orderId = activeOrder.id;
+      const result = await TF.state.supa.rpc('submit_order_payment_v16', {
+        p_order_id: orderId,
         p_payment_date: TF.$('addPaymentDate').value,
         p_amount: TF.num(TF.$('addPaymentAmount').value),
         p_payment_method: TF.$('addPaymentMethod').value,
         p_cash_account_id: TF.$('addPaymentAccount').value,
         p_reference_number: TF.$('addPaymentReference').value.trim(),
         p_proof_storage_path: proof,
-        p_notes: null
+        p_notes: TF.$('addPaymentNotes').value.trim() || null
       });
       if (result.error) throw result.error;
-      TF.toast('Payment confirmed');
+      TF.toast('Payment sent for verification');
       TF.$('orderDialog').close();
       await loadOrders();
-      await openOrder(activeOrder.id);
+      await openOrder(orderId, true, false);
     } catch (error) {
-      TF.fail(error, 'Payment not confirmed');
+      TF.fail(error, 'Payment not submitted');
+    } finally {
+      TF.setLoading(button, false);
+    }
+  }
+
+  async function reviewPayment(button) {
+    const paymentId = button.dataset.paymentId;
+    const decision = button.dataset.reviewPayment;
+    const reason = decision === 'reject' ? prompt('Why is this payment being rejected?') : null;
+    if (decision === 'reject' && !reason?.trim()) return;
+    if (decision === 'confirm' && !confirm('Confirm that this payment is visible in the selected account?')) return;
+    TF.setLoading(button, true, decision === 'confirm' ? 'Confirming…' : 'Rejecting…');
+    try {
+      const orderId = activeOrder?.id;
+      const result = await TF.state.supa.rpc('review_submitted_payment_v16', {
+        p_payment_id: paymentId,
+        p_decision: decision,
+        p_rejection_reason: reason
+      });
+      if (result.error) throw result.error;
+      TF.toast(decision === 'confirm' ? 'Payment verified and inventory updated' : 'Payment submission rejected');
+      TF.$('orderDialog').close();
+      await loadOrders();
+      if (orderId) await openOrder(orderId, true, false);
+    } catch (error) {
+      TF.fail(error, 'Payment review failed');
     } finally {
       TF.setLoading(button, false);
     }
@@ -827,19 +1028,55 @@
     const button = event.submitter;
     TF.setLoading(button, true, 'Saving…');
     try {
-      const result = await TF.state.supa.rpc('update_order_operations_v14', {
+      const method = TF.$('operationMethod').value;
+      const desired = TF.$('operationStatus').value;
+      const tracking = isJnt(method) ? TF.$('operationTracking').value.trim() : '';
+      if (['processing', 'delivered'].includes(desired) && !hasFulfillment(method)) throw new Error('Select J&T, Lalamove, or Walk-in / Pickup first.');
+      if (desired === 'processing' && (!['paid', 'overpaid'].includes(activeOrder.payment_status) || TF.num(activeOrder.pending_payment_count) > 0)) throw new Error('Verify the full payment before starting processing.');
+      if (desired === 'processing' && TF.num(activeOrder.shortage_quantity) > 0) throw new Error('This order is still short on stock.');
+      if (desired === 'delivered' && (!['paid', 'overpaid'].includes(activeOrder.payment_status) || TF.num(activeOrder.pending_payment_count) > 0)) throw new Error('Verify the full payment before marking delivered.');
+      if (desired === 'delivered' && TF.num(activeOrder.shortage_quantity) > 0) throw new Error('This order is still short on stock.');
+      if (desired === 'delivered' && isJnt(method) && !tracking) throw new Error('Add the J&T tracking number before marking the order delivered.');
+
+      const common = {
         p_order_id: activeOrder.id,
-        p_status: TF.$('operationStatus').value,
-        p_fulfillment_method: TF.$('operationMethod').value,
-        p_tracking_number: TF.$('operationTracking').value,
+        p_fulfillment_method: method,
+        p_tracking_number: tracking,
         p_actual_courier_cost: TF.$('operationCourierCost').value.trim() === '' ? null : TF.num(TF.$('operationCourierCost').value),
-        p_shipped_date: TF.$('operationShippedDate').value || null,
-        p_delivered_date: TF.$('operationDeliveredDate').value || null,
         p_customer_update_note: TF.$('operationCustomerNote').value,
-        p_status_note: TF.$('operationStatusNote').value
-      });
-      if (result.error) throw result.error;
-      TF.toast('Status and tracking updated');
+        p_status_note: TF.$('operationStatusNote').value || `Simple status updated to ${simpleStatusLabel(desired)}`
+      };
+
+      if (desired === 'delivered') {
+        if (activeOrder.status !== 'shipped') {
+          const shippedResult = await TF.state.supa.rpc('update_order_operations_v14', {
+            ...common,
+            p_status: 'shipped',
+            p_shipped_date: activeOrder.shipped_at ? String(activeOrder.shipped_at).slice(0, 10) : TF.today(),
+            p_delivered_date: null
+          });
+          if (shippedResult.error) throw shippedResult.error;
+        }
+        const deliveredResult = await TF.state.supa.rpc('update_order_operations_v14', {
+          ...common,
+          p_status: 'delivered',
+          p_shipped_date: activeOrder.shipped_at ? String(activeOrder.shipped_at).slice(0, 10) : TF.today(),
+          p_delivered_date: TF.today()
+        });
+        if (deliveredResult.error) throw deliveredResult.error;
+      } else {
+        let targetStatus = activeOrder.status;
+        if (desired === 'processing') targetStatus = ['packing', 'ready_to_ship', 'shipped'].includes(activeOrder.status) ? activeOrder.status : 'packing';
+        if (desired === 'pending' && simpleStatus(activeOrder) !== 'pending') targetStatus = ['paid', 'overpaid'].includes(activeOrder.payment_status) ? 'ready_to_pack' : 'draft';
+        const result = await TF.state.supa.rpc('update_order_operations_v14', {
+          ...common,
+          p_status: targetStatus,
+          p_shipped_date: targetStatus === 'shipped' ? (activeOrder.shipped_at ? String(activeOrder.shipped_at).slice(0, 10) : TF.today()) : null,
+          p_delivered_date: null
+        });
+        if (result.error) throw result.error;
+      }
+      TF.toast(`Order marked ${simpleStatusLabel(desired)}`);
       const id = activeOrder.id;
       TF.$('orderDialog').close();
       await loadOrders();
@@ -851,21 +1088,35 @@
     }
   }
 
-  async function quickStatus(order, status) {
+  async function quickStatus(order, status, quiet = false) {
     const result = await TF.state.supa.rpc('update_order_operations_v14', {
       p_order_id: order.id,
       p_status: status,
       p_fulfillment_method: order.fulfillment_method,
-      p_tracking_number: order.tracking_number,
+      p_tracking_number: isJnt(order) ? order.tracking_number : '',
       p_actual_courier_cost: order.courier_cost_finalized ? order.actual_courier_cost : null,
-      p_shipped_date: null,
-      p_delivered_date: null,
+      p_shipped_date: ['shipped', 'delivered'].includes(status) ? (order.shipped_at ? String(order.shipped_at).slice(0, 10) : TF.today()) : null,
+      p_delivered_date: status === 'delivered' ? TF.today() : null,
       p_customer_update_note: order.customer_update_note,
-      p_status_note: null
+      p_status_note: `Simple status update: ${simpleStatusLabel(simpleStatusFromRaw(status))}`
     });
     if (result.error) throw result.error;
-    TF.toast(`Order marked ${TF.statusLabel(status)}`);
+    if (!quiet) TF.toast(`Order marked ${simpleStatusLabel(simpleStatusFromRaw(status))}`);
     await loadOrders();
+  }
+
+  async function completeOrder(order) {
+    if (isJnt(order) && !String(order.tracking_number || '').trim()) {
+      TF.toast('Add the J&T tracking number first', true);
+      await openOrder(order.id, false, true);
+      return;
+    }
+    if (!confirm(`Mark ${order.order_number} as delivered/completed?`)) return;
+    if (order.status !== 'shipped') {
+      await quickStatus(order, 'shipped', true);
+      order = orders.find((row) => row.id === order.id) || order;
+    }
+    await quickStatus(order, 'delivered');
   }
 
   async function tableAction(event) {
@@ -890,9 +1141,22 @@
       try {
         if (button.dataset.action === 'view') await openOrder(order.id);
         if (button.dataset.action === 'pay') await openOrder(order.id, true, false);
-        if (button.dataset.action === 'packing') await quickStatus(order, 'packing');
-        if (button.dataset.action === 'ready') await quickStatus(order, 'ready_to_ship');
+        if (button.dataset.action === 'processing') {
+          if (!hasFulfillment(order)) TF.toast('Set the fulfillment method first', true);
+          else if (!['paid', 'overpaid'].includes(order.payment_status) || TF.num(order.pending_payment_count) > 0) TF.toast('Verify the full payment first', true);
+          else if (TF.num(order.shortage_quantity) > 0) TF.toast('This order is still short on stock', true);
+          else await quickStatus(order, 'packing');
+        }
         if (button.dataset.action === 'openTracking') await openOrder(order.id, false, true);
+        if (button.dataset.action === 'shipped') {
+          if (isJnt(order) && !order.tracking_number) {
+            TF.toast('Add the J&T tracking number first', true);
+            await openOrder(order.id, false, true);
+          } else if (confirm(`Mark ${order.order_number} as shipped/released?`)) {
+            await quickStatus(order, 'shipped', true);
+          }
+        }
+        if (button.dataset.action === 'complete') await completeOrder(order);
       } catch (error) {
         TF.fail(error, 'Order action failed');
       }
@@ -934,35 +1198,49 @@
     const selected = orders.filter((order) => selectedOrderIds.has(order.id));
     if (!action) return TF.toast('Choose a bulk action first', true);
     if (!selected.length) return TF.toast('Select at least one order', true);
-    const label = {
-      packing: 'start packing', ready_to_ship: 'mark ready to ship', set_courier: 'set courier', shipped: 'mark shipped'
-    }[action];
+    const label = { processing: 'start processing', delivered: 'mark delivered', set_courier: 'set fulfillment' }[action];
     if (!confirm(`${label} for ${selected.length} selected order${selected.length === 1 ? '' : 's'}?`)) return;
     const button = TF.$('applyBulkOrderAction');
     TF.setLoading(button, true, 'Applying…');
     const errors = [];
     try {
-      for (const order of selected) {
-        const targetStatus = action === 'set_courier' ? order.status : action;
-        const method = action === 'set_courier' ? TF.$('bulkCourier').value : order.fulfillment_method;
-        const result = await TF.state.supa.rpc('update_order_operations_v14', {
-          p_order_id: order.id,
-          p_status: targetStatus,
-          p_fulfillment_method: method,
-          p_tracking_number: order.tracking_number,
-          p_actual_courier_cost: order.courier_cost_finalized ? order.actual_courier_cost : null,
-          p_shipped_date: action === 'shipped' ? TF.today() : null,
-          p_delivered_date: null,
-          p_customer_update_note: order.customer_update_note,
-          p_status_note: `Bulk update from Orders page: ${label}`
-        });
-        if (result.error) errors.push(`${order.order_number}: ${result.error.message}`);
+      for (let order of selected) {
+        try {
+          if (action === 'processing') {
+            if (!hasFulfillment(order)) throw new Error('fulfillment is not selected');
+            if (!['paid', 'overpaid'].includes(order.payment_status) || TF.num(order.pending_payment_count) > 0) throw new Error('payment is not fully verified');
+            if (TF.num(order.shortage_quantity) > 0) throw new Error('stock is short');
+            await quickStatus(order, 'packing');
+          } else if (action === 'delivered') {
+            if (simpleStatus(order) !== 'processing') throw new Error('start processing first');
+            if (isJnt(order) && !order.tracking_number) throw new Error('J&T tracking is missing');
+            if (order.status !== 'shipped') await quickStatus(order, 'shipped', true);
+            order = orders.find((row) => row.id === order.id) || order;
+            await quickStatus(order, 'delivered');
+          } else if (action === 'set_courier') {
+            const method = TF.$('bulkCourier').value;
+            const result = await TF.state.supa.rpc('update_order_operations_v14', {
+              p_order_id: order.id,
+              p_status: order.status,
+              p_fulfillment_method: method,
+              p_tracking_number: isJnt(method) ? order.tracking_number : '',
+              p_actual_courier_cost: order.courier_cost_finalized ? order.actual_courier_cost : null,
+              p_shipped_date: order.shipped_at ? String(order.shipped_at).slice(0, 10) : null,
+              p_delivered_date: order.delivered_at ? String(order.delivered_at).slice(0, 10) : null,
+              p_customer_update_note: order.customer_update_note,
+              p_status_note: 'Fulfillment updated from Orders page'
+            });
+            if (result.error) throw result.error;
+          }
+        } catch (error) {
+          errors.push(`${order.order_number}: ${error.message}`);
+        }
       }
       selectedOrderIds.clear();
       await loadOrders();
       if (errors.length) {
         console.warn('Bulk action errors', errors);
-        TF.toast(`${selected.length - errors.length} updated; ${errors.length} failed. Check console.`, true);
+        TF.toast(`${selected.length - errors.length} updated; ${errors.length} failed`, true);
       } else {
         TF.toast(`${selected.length} order${selected.length === 1 ? '' : 's'} updated`);
       }
@@ -972,6 +1250,7 @@
   }
 
   function applyQueryFilter() {
+    if (!isListPage()) return;
     const params = new URLSearchParams(location.search);
     const value = params.get('filter');
     if (value && [...TF.$('orderFilter').options].some((option) => option.value === value)) TF.$('orderFilter').value = value;
@@ -986,6 +1265,7 @@
     assignFromParam('preset', 'orderDatePreset');
     assignFromParam('start', 'orderStartDate');
     assignFromParam('end', 'orderEndDate');
+    assignFromParam('payment', 'orderPaymentFilter');
     assignFromParam('fulfillment', 'orderFulfillmentFilter');
     assignFromParam('sort', 'orderSort');
     assignFromParam('search', 'orderSearch');
@@ -994,53 +1274,66 @@
 
   TF.ready.then(async () => {
     fillBase();
-    renderSavedFilters();
-    applyQueryFilter();
-    renderItems();
-    updateConditions();
-    TF.$('parseOrderBtn').addEventListener('click', parseOrder);
-    TF.$('addItemBtn').addEventListener('click', () => { parsedItems.push({ category_id: '', category_code: '', category: '', sku: '', quantity: 1, unit_price: 0, name: '' }); renderItems(); });
-    TF.$('parsedItemsBody').addEventListener('input', editItem);
-    TF.$('parsedItemsBody').addEventListener('change', editItem);
-    TF.$('parsedItemsBody').addEventListener('click', (event) => {
-      const button = event.target.closest('[data-remove]');
-      if (!button) return;
-      parsedItems.splice(Number(button.dataset.remove), 1);
+    if (isEntryPage()) {
       renderItems();
-    });
-    TF.$('orderType').addEventListener('change', updateConditions);
-    TF.$('fulfillmentMethod').addEventListener('change', updateConditions);
-    TF.$('shippingFee').addEventListener('input', () => updateTotals(true));
-    TF.$('saveAwaitingBtn').addEventListener('click', () => saveOrder(false));
-    TF.$('saveConfirmBtn').addEventListener('click', () => saveOrder(true));
-    TF.$('saveEditBtn').addEventListener('click', saveEdit);
-    TF.$('cancelEditBtn').addEventListener('click', resetForm);
-    TF.$('newOrderBtn').addEventListener('click', () => { resetForm(); window.scrollTo({ top: 0, behavior: 'smooth' }); });
-    TF.$('orderSearch').addEventListener('input', renderOrders);
-    ['orderDateBasis', 'orderFilter', 'orderFulfillmentFilter', 'orderSort', 'orderStartDate', 'orderEndDate'].forEach((id) => TF.$(id).addEventListener('change', renderOrders));
-    TF.$('orderDatePreset').addEventListener('change', () => { updateOrderDateControls(); renderOrders(); });
-    TF.$('clearOrderFilters').addEventListener('click', clearOrderFilters);
-    TF.$('saveCurrentFilterBtn').addEventListener('click', saveCurrentFilter);
-    TF.$('deleteSavedFilterBtn').addEventListener('click', deleteSavedFilter);
-    TF.$('savedFiltersSelect').addEventListener('change', () => {
-      const value = TF.$('savedFiltersSelect').value;
-      if (value === '') return;
-      const filter = savedFilters()[Number(value)];
-      if (filter) { applyFilterState(filter.state); renderOrders(); }
-    });
-    TF.$('applyBulkOrderAction').addEventListener('click', () => applyBulkAction().catch((error) => TF.fail(error, 'Bulk update failed')));
-    TF.$('clearBulkSelection').addEventListener('click', () => { selectedOrderIds.clear(); renderOrders(); });
-    TF.$('ordersTable').addEventListener('click', tableAction);
-    TF.$('closeOrderDialog').addEventListener('click', () => TF.$('orderDialog').close());
-    TF.$('closeOrderDialogBottom').addEventListener('click', () => TF.$('orderDialog').close());
-    TF.$('addPaymentForm').addEventListener('submit', confirmAdditionalPayment);
-    TF.$('operationsForm').addEventListener('submit', saveOperations);
-    TF.$('copyOrderItemsBtn').addEventListener('click', () => TF.copyText(`${activeOrder.order_number} — ${activeOrder.customer_name}\n${itemText(activeItems)}`, 'Order details copied'));
-    TF.$('copyCustomerUpdateBtn').addEventListener('click', () => TF.copyText(TF.$('customerUpdatePreview').textContent, 'Customer update copied'));
-    TF.$('copyOriginalBtn').addEventListener('click', () => TF.copyText(activeOrder?.raw_order_form || '', 'Original order form copied'));
-    TF.$('editOrderBtn').addEventListener('click', () => activeOrder && startEdit(activeOrder).catch((error) => TF.fail(error, 'Edit failed')));
-    TF.$('cancelOrderBtn').addEventListener('click', () => cancelOrder().catch((error) => TF.fail(error, 'Cancellation failed')));
+      updateConditions();
+      TF.$('parseOrderBtn').addEventListener('click', parseOrder);
+      TF.$('addItemBtn').addEventListener('click', () => { parsedItems.push({ category_id: '', category_code: '', category: '', sku: '', quantity: 1, unit_price: 0, name: '' }); renderItems(); });
+      TF.$('parsedItemsBody').addEventListener('input', editItem);
+      TF.$('parsedItemsBody').addEventListener('change', editItem);
+      TF.$('parsedItemsBody').addEventListener('click', (event) => {
+        const button = event.target.closest('[data-remove]');
+        if (!button) return;
+        parsedItems.splice(Number(button.dataset.remove), 1);
+        renderItems();
+      });
+      TF.$('orderType').addEventListener('change', updateConditions);
+      TF.$('fulfillmentMethod').addEventListener('change', updateConditions);
+      TF.$('shippingFee').addEventListener('input', () => updateTotals(true));
+      TF.$('saveAwaitingBtn').addEventListener('click', () => saveOrder(false));
+      TF.$('saveSubmitBtn').addEventListener('click', () => saveOrder(true));
+      TF.$('saveEditBtn').addEventListener('click', saveEdit);
+      TF.$('cancelEditBtn').addEventListener('click', resetForm);
+      if (has('createAnotherOrderBtn')) TF.$('createAnotherOrderBtn').addEventListener('click', () => { resetForm(); window.scrollTo({ top: 0, behavior: 'smooth' }); });
+    }
+    if (isListPage()) {
+      renderSavedFilters();
+      applyQueryFilter();
+      TF.$('orderSearch').addEventListener('input', renderOrders);
+      ['orderDateBasis', 'orderFilter', 'orderPaymentFilter', 'orderFulfillmentFilter', 'orderSort', 'orderStartDate', 'orderEndDate'].forEach((id) => TF.$(id).addEventListener('change', renderOrders));
+      TF.$('orderDatePreset').addEventListener('change', () => { updateOrderDateControls(); renderOrders(); });
+      TF.$('clearOrderFilters').addEventListener('click', clearOrderFilters);
+      TF.$('saveCurrentFilterBtn').addEventListener('click', saveCurrentFilter);
+      TF.$('deleteSavedFilterBtn').addEventListener('click', deleteSavedFilter);
+      TF.$('savedFiltersSelect').addEventListener('change', () => {
+        const value = TF.$('savedFiltersSelect').value;
+        if (value === '') return;
+        const filter = savedFilters()[Number(value)];
+        if (filter) { applyFilterState(filter.state); renderOrders(); }
+      });
+      TF.$('applyBulkOrderAction').addEventListener('click', () => applyBulkAction().catch((error) => TF.fail(error, 'Bulk update failed')));
+      TF.$('clearBulkSelection').addEventListener('click', () => { selectedOrderIds.clear(); renderOrders(); });
+      TF.$('ordersTable').addEventListener('click', tableAction);
+    }
+    if (has('orderDialog')) {
+      TF.$('closeOrderDialog').addEventListener('click', () => TF.$('orderDialog').close());
+      TF.$('closeOrderDialogBottom').addEventListener('click', () => TF.$('orderDialog').close());
+      TF.$('addPaymentForm').addEventListener('submit', submitAdditionalPayment);
+      TF.$('paymentSubmissionsList').addEventListener('click', (event) => {
+        const button = event.target.closest('[data-review-payment]');
+        if (button) reviewPayment(button);
+      });
+      TF.$('operationsForm').addEventListener('submit', saveOperations);
+      TF.$('operationMethod').addEventListener('change', updateOperationTrackingRule);
+      TF.$('copyOrderItemsBtn').addEventListener('click', () => TF.copyText(`${activeOrder.order_number} — ${activeOrder.customer_name}
+${itemText(activeItems)}`, 'Order details copied'));
+      TF.$('copyCustomerUpdateBtn').addEventListener('click', () => TF.copyText(TF.$('customerUpdatePreview').textContent, 'Customer update copied'));
+      TF.$('copyOriginalBtn').addEventListener('click', () => TF.copyText(activeOrder?.raw_order_form || '', 'Original order form copied'));
+      TF.$('editOrderBtn').addEventListener('click', () => activeOrder && startEdit(activeOrder).catch((error) => TF.fail(error, 'Edit failed')));
+      TF.$('cancelOrderBtn').addEventListener('click', () => cancelOrder().catch((error) => TF.fail(error, 'Cancellation failed')));
+    }
     window.addEventListener('twofly:refresh', () => loadOrders().catch((error) => TF.fail(error, 'Orders failed')));
     await loadOrders();
   }).catch((error) => TF.fail(error, 'Orders failed'));
+
 })();

@@ -4,6 +4,42 @@
   let orders = [];
   let active = null;
 
+  function isJnt(value) {
+    const method = typeof value === 'string' ? value : value?.fulfillment_method;
+    return String(method || '').toLowerCase() === 'jnt';
+  }
+
+  function needsTracking(order) {
+    return isJnt(order) && ['ready_to_ship', 'shipped'].includes(order.status) && !String(order.tracking_number || '').trim();
+  }
+
+  function hasFulfillment(value) {
+    const method = typeof value === 'string' ? value : value?.fulfillment_method;
+    return ['jnt', 'lalamove', 'walk_in'].includes(String(method || '').toLowerCase());
+  }
+
+  function fulfillmentText(value) {
+    const method = typeof value === 'string' ? value : value?.fulfillment_method;
+    if (method === 'jnt') return 'J&T';
+    if (method === 'lalamove') return 'Lalamove';
+    if (method === 'walk_in') return 'Walk-in / Pickup';
+    return 'Not selected';
+  }
+
+  function simpleStatus(orderOrStatus) {
+    const status = typeof orderOrStatus === 'string' ? orderOrStatus : orderOrStatus?.status;
+    if (status === 'delivered') return 'delivered';
+    if (['packing', 'ready_to_ship', 'shipped'].includes(status)) return 'processing';
+    return 'pending';
+  }
+
+  function simpleStatusPill(order) {
+    const value = simpleStatus(order);
+    const label = value === 'delivered' ? 'Delivered' : value === 'processing' ? 'Processing' : 'Pending';
+    const tone = value === 'delivered' ? 'ok' : value === 'processing' ? 'info' : 'warn';
+    return `<span class="pill simple-order-status ${tone}">${label}</span>`;
+  }
+
   function facebookUrl(value) {
     const raw = String(value || '').trim();
     if (!raw) return '';
@@ -19,15 +55,17 @@
     return `<a class="btn small" href="${TF.esc(url)}" target="_blank" rel="noopener noreferrer">${TF.esc(label)}</a>`;
   }
 
-  function message(order, status = order.status, tracking = order.tracking_number) {
-    const code = tracking ? `\nTracking number: ${tracking}` : '';
-    if (status === 'waiting_stock') return `Hi! Confirmed na po ang payment for ${order.order_number}. Waiting lang po tayo sa requested stock/design. We’ll update you once ready for packing.`;
-    if (['confirmed', 'ready_to_pack'].includes(status)) return `Hi! Confirmed na po ang payment for ${order.order_number}. Ready na po ang stock and naka-queue na for packing.`;
-    if (status === 'packing') return `Hi! Currently being packed na po ang order ${order.order_number}. We’ll send the tracking number once available.`;
-    if (status === 'ready_to_ship') return `Hi! Ready to ship na po ang order ${order.order_number}. Waiting na lang po sa courier handoff and tracking number.`;
-    if (status === 'shipped') return `Hi! Shipped na po ang order ${order.order_number} through ${String(order.fulfillment_method || 'J&T').toUpperCase().replace('_', '-')}.${code}\nThank you!`;
-    if (status === 'delivered') return `Hi! Marked delivered na po ang order ${order.order_number}.${code}\nThank you for ordering!`;
-    return `Hi! Update for order ${order.order_number}: ${TF.statusLabel(status)}.`;
+  function message(order, status = simpleStatus(order), tracking = order.tracking_number) {
+    const simple = ['pending', 'processing', 'delivered'].includes(status) ? status : simpleStatus(status);
+    const jnt = isJnt(order);
+    const code = jnt && tracking ? `
+Tracking number: ${tracking}` : '';
+    const method = fulfillmentText(order);
+    if (TF.num(order.pending_payment_count) > 0) return `Hi! Nareceive na po namin ang payment details for ${order.order_number}. For verification pa po ito.`;
+    if (simple === 'pending') return `Hi! Pending pa po ang order ${order.order_number}. We’ll update you once processing na.`;
+    if (simple === 'processing') return jnt ? `Hi! Processing na po ang order ${order.order_number} for J&T.${code}` : `Hi! Processing na po ang order ${order.order_number} for ${method}. No tracking number is needed.`;
+    return jnt ? `Hi! Delivered na po ang order ${order.order_number}.${code}
+Thank you for ordering!` : `Hi! Completed na po ang order ${order.order_number} through ${method}. Thank you for ordering!`;
   }
 
   function filtered() {
@@ -38,43 +76,63 @@
       if (!found) return false;
       if (filter === 'all') return true;
       if (filter === 'active') return !['delivered', 'cancelled', 'refunded'].includes(order.status);
-      if (filter === 'missing_tracking') return order.missing_tracking;
+      if (filter === 'missing_tracking') return needsTracking(order);
       if (filter === 'paid_late') return order.paid_not_shipped_alert;
-      return order.status === filter;
+      if (['pending', 'processing', 'delivered'].includes(filter)) return simpleStatus(order) === filter;
+      return true;
     });
+  }
+
+  function trackingCell(order) {
+    if (!isJnt(order)) return `<span class="tracking-not-required">Not required</span><br><small>${TF.esc(fulfillmentText(order))}</small>`;
+    if (order.tracking_number) return `<code>${TF.esc(order.tracking_number)}</code><br><small>J&T</small>`;
+    return `<span class="muted">No tracking yet</span>${needsTracking(order) ? '<br><span class="pill danger">J&T tracking needed</span>' : ''}`;
   }
 
   function render() {
     const rows = filtered();
-    TF.$('trackingTable').innerHTML = `<table><thead><tr><th>Customer</th><th>Order</th><th>Status</th><th>Courier</th><th>Tracking</th><th>Dates</th><th>Last update</th><th>Actions</th></tr></thead><tbody>${rows.map((order) => `<tr class="${order.missing_tracking || order.paid_not_shipped_alert ? 'attention-row' : ''}">
+    TF.$('trackingTable').innerHTML = `<table class="tracking-clean-table"><thead><tr><th>Customer</th><th>Order</th><th>Status</th><th>Method</th><th>Tracking</th><th>Dates</th><th>Last update</th><th>Actions</th></tr></thead><tbody>${rows.map((order) => `<tr class="${needsTracking(order) || order.paid_not_shipped_alert ? 'attention-row' : ''}">
       <td><strong>${TF.esc(order.customer_name)}</strong><br><small>${TF.esc(order.phone || '')}</small>${order.facebook_profile ? `<br>${facebookLink(order.facebook_profile, 'Open profile')}` : ''}</td>
-      <td>${TF.esc(order.order_number)}<br><small>${TF.formatDate(order.order_date)}</small></td>
-      <td>${TF.statusPill(order.status)}<br>${TF.statusPill(order.payment_status)}</td>
-      <td>${TF.esc(String(order.fulfillment_method || 'unselected').toUpperCase().replace('_', '-'))}</td>
-      <td>${order.tracking_number ? `<code>${TF.esc(order.tracking_number)}</code>` : '<span class="muted">Not available</span>'}${order.missing_tracking ? '<br><span class="pill danger">Missing</span>' : ''}</td>
+      <td><strong class="order-number-text">${TF.esc(order.order_number)}</strong><br><small>${TF.formatDate(order.order_date)}</small></td>
+      <td>${simpleStatusPill(order)}<br><small>${TF.num(order.pending_payment_count) > 0 ? 'For Verification' : TF.statusLabel(order.payment_status)}</small></td>
+      <td><strong>${TF.esc(fulfillmentText(order))}</strong></td>
+      <td>${trackingCell(order)}</td>
       <td><small>Shipped: ${TF.formatDate(order.shipped_at)}<br>Delivered: ${TF.formatDate(order.delivered_at)}</small></td>
       <td>${TF.formatDateTime(order.last_activity_at)}</td>
-      <td><div class="row-actions"><button class="btn primary small" data-edit="${order.id}">Update</button><button class="btn small" data-message="${order.id}">Copy Message</button>${order.tracking_number ? `<button class="btn small" data-copy="${order.id}">Copy Tracking</button>` : ''}</div></td>
+      <td><div class="row-actions"><button class="btn primary small" data-edit="${order.id}">Update Status</button><button class="btn small" data-message="${order.id}">Copy Message</button>${isJnt(order) && order.tracking_number ? `<button class="btn small" data-copy="${order.id}">Copy Tracking</button>` : ''}</div></td>
     </tr>`).join('') || '<tr><td colspan="8" class="empty">No matching orders.</td></tr>'}</tbody></table>`;
+  }
+
+  function updateTrackingRule() {
+    const jnt = isJnt(TF.$('trackMethod').value);
+    const input = TF.$('trackNumber');
+    input.disabled = !jnt;
+    input.placeholder = jnt ? 'Enter J&T tracking when available' : 'Not required for this method';
+    if (!jnt) input.value = '';
+    TF.$('trackNumberWrap')?.classList.toggle('tracking-disabled-field', !jnt);
+    const help = TF.$('trackNumberHelp');
+    if (help) help.textContent = jnt ? 'Only J&T orders use a tracking number.' : `${fulfillmentText(TF.$('trackMethod').value)} orders do not need a tracking number.`;
+    TF.$('copyTrackingNumber').classList.toggle('hidden', !jnt || !input.value.trim());
+    updatePreview();
   }
 
   function open(order) {
     active = order;
     TF.$('trackingDialogTitle').textContent = `${order.order_number} — ${order.customer_name}`;
-    TF.$('trackingDialogMeta').innerHTML = `${TF.statusPill(order.payment_status)} ${TF.statusPill(order.status)}`;
+    TF.$('trackingDialogMeta').innerHTML = `${simpleStatusPill(order)} ${TF.num(order.pending_payment_count) > 0 ? TF.statusPill('submitted') : TF.statusPill(order.payment_status)}`;
     const facebookButton = TF.$('trackingFacebookBtn');
     const facebookProfileUrl = facebookUrl(order.facebook_profile);
     facebookButton.classList.toggle('hidden', !facebookProfileUrl);
     facebookButton.href = facebookProfileUrl || '#';
-    TF.$('trackStatus').value = order.status;
+    TF.$('trackStatus').value = simpleStatus(order);
     TF.$('trackMethod').value = order.fulfillment_method || 'unselected';
-    TF.$('trackNumber').value = order.tracking_number || '';
+    TF.$('trackNumber').value = isJnt(order) ? (order.tracking_number || '') : '';
     TF.$('trackShippedDate').value = order.shipped_at ? String(order.shipped_at).slice(0, 10) : '';
     TF.$('trackDeliveredDate').value = order.delivered_at ? String(order.delivered_at).slice(0, 10) : '';
     TF.$('trackCourierCost').value = order.courier_cost_finalized ? TF.num(order.actual_courier_cost).toFixed(2) : '';
     TF.$('trackCustomerNote').value = order.customer_update_note || '';
     TF.$('trackStatusNote').value = '';
-    updatePreview();
+    updateTrackingRule();
     TF.$('trackingDialog').showModal();
   }
 
@@ -82,6 +140,7 @@
     if (!active) return;
     const draft = { ...active, fulfillment_method: TF.$('trackMethod').value };
     TF.$('trackingMessage').textContent = message(draft, TF.$('trackStatus').value, TF.$('trackNumber').value.trim());
+    TF.$('copyTrackingNumber').classList.toggle('hidden', !isJnt(draft) || !TF.$('trackNumber').value.trim());
   }
 
   async function save(event) {
@@ -89,23 +148,42 @@
     const button = event.submitter;
     TF.setLoading(button, true, 'Saving…');
     try {
-      const result = await TF.state.supa.rpc('update_order_operations_v14', {
+      const method = TF.$('trackMethod').value;
+      const desired = TF.$('trackStatus').value;
+      const trackingNumber = isJnt(method) ? TF.$('trackNumber').value.trim() : '';
+      if (['processing', 'delivered'].includes(desired) && !hasFulfillment(method)) throw new Error('Select J&T, Lalamove, or Walk-in / Pickup first.');
+      if (desired === 'processing' && (!['paid', 'overpaid'].includes(active.payment_status) || TF.num(active.pending_payment_count) > 0)) throw new Error('Verify the full payment before starting processing.');
+      if (desired === 'processing' && TF.num(active.shortage_quantity) > 0) throw new Error('This order is still short on stock.');
+      if (desired === 'delivered' && (!['paid', 'overpaid'].includes(active.payment_status) || TF.num(active.pending_payment_count) > 0)) throw new Error('Verify the full payment before marking delivered.');
+      if (desired === 'delivered' && TF.num(active.shortage_quantity) > 0) throw new Error('This order is still short on stock.');
+      if (desired === 'delivered' && isJnt(method) && !trackingNumber) throw new Error('Add the J&T tracking number before marking delivered.');
+      const common = {
         p_order_id: active.id,
-        p_status: TF.$('trackStatus').value,
-        p_fulfillment_method: TF.$('trackMethod').value,
-        p_tracking_number: TF.$('trackNumber').value,
+        p_fulfillment_method: method,
+        p_tracking_number: trackingNumber,
         p_actual_courier_cost: TF.$('trackCourierCost').value.trim() === '' ? null : TF.num(TF.$('trackCourierCost').value),
-        p_shipped_date: TF.$('trackShippedDate').value || null,
-        p_delivered_date: TF.$('trackDeliveredDate').value || null,
         p_customer_update_note: TF.$('trackCustomerNote').value,
-        p_status_note: TF.$('trackStatusNote').value
-      });
-      if (result.error) throw result.error;
-      TF.toast('Tracking update saved');
+        p_status_note: TF.$('trackStatusNote').value || `Simple status: ${desired}`
+      };
+      if (desired === 'delivered') {
+        if (active.status !== 'shipped') {
+          const shipped = await TF.state.supa.rpc('update_order_operations_v14', { ...common, p_status: 'shipped', p_shipped_date: TF.today(), p_delivered_date: null });
+          if (shipped.error) throw shipped.error;
+        }
+        const delivered = await TF.state.supa.rpc('update_order_operations_v14', { ...common, p_status: 'delivered', p_shipped_date: TF.today(), p_delivered_date: TF.today() });
+        if (delivered.error) throw delivered.error;
+      } else {
+        let target = active.status;
+        if (desired === 'processing' && !['packing', 'ready_to_ship', 'shipped'].includes(active.status)) target = 'packing';
+        if (desired === 'pending' && simpleStatus(active) !== 'pending') target = ['paid', 'overpaid'].includes(active.payment_status) ? 'ready_to_pack' : 'draft';
+        const result = await TF.state.supa.rpc('update_order_operations_v14', { ...common, p_status: target, p_shipped_date: target === 'shipped' ? TF.today() : null, p_delivered_date: null });
+        if (result.error) throw result.error;
+      }
+      TF.toast('Order updated');
       TF.$('trackingDialog').close();
       await load();
     } catch (error) {
-      TF.fail(error, 'Tracking update failed');
+      TF.fail(error, 'Order update failed');
     } finally {
       TF.setLoading(button, false);
     }
@@ -121,17 +199,17 @@
     if (!order) return;
     if (edit) open(order);
     if (msg) await TF.copyText(message(order), 'Customer update copied');
-    if (copy) await TF.copyText(order.tracking_number, 'Tracking number copied');
+    if (copy && isJnt(order)) await TF.copyText(order.tracking_number, 'Tracking number copied');
   }
 
   async function load() {
-    const result = await TF.state.supa.from('v_daily_ops_orders_v15').select('*').order('last_activity_at', { ascending: false }).limit(5000);
+    const result = await TF.state.supa.from('v_daily_ops_orders_v16').select('*').order('last_activity_at', { ascending: false }).limit(5000);
     if (result.error) throw result.error;
     orders = result.data || [];
-    TF.$('trackingMissing').textContent = orders.filter((order) => order.missing_tracking).length;
-    TF.$('trackingReady').textContent = orders.filter((order) => order.status === 'ready_to_ship').length;
-    TF.$('trackingShipped').textContent = orders.filter((order) => order.status === 'shipped').length;
-    TF.$('trackingWaiting').textContent = orders.filter((order) => order.status === 'waiting_stock').length;
+    TF.$('trackingMissing').textContent = orders.filter(needsTracking).length;
+    TF.$('trackingReady').textContent = orders.filter((order) => simpleStatus(order) === 'pending').length;
+    TF.$('trackingShipped').textContent = orders.filter((order) => simpleStatus(order) === 'processing').length;
+    TF.$('trackingWaiting').textContent = orders.filter((order) => simpleStatus(order) === 'delivered').length;
     TF.$('trackingLate').textContent = orders.filter((order) => order.paid_not_shipped_alert).length;
     render();
   }
@@ -144,7 +222,8 @@
     TF.$('trackingTable').addEventListener('click', (event) => action(event).catch((error) => TF.fail(error, 'Tracking action failed')));
     TF.$('trackingForm').addEventListener('submit', save);
     TF.$('closeTrackingDialog').addEventListener('click', () => TF.$('trackingDialog').close());
-    ['trackStatus', 'trackMethod', 'trackNumber'].forEach((id) => TF.$(id).addEventListener('input', updatePreview));
+    TF.$('trackMethod').addEventListener('change', updateTrackingRule);
+    ['trackStatus', 'trackNumber'].forEach((id) => TF.$(id).addEventListener('input', updatePreview));
     TF.$('copyTrackingUpdate').addEventListener('click', () => TF.copyText(TF.$('trackingMessage').textContent, 'Customer update copied'));
     TF.$('copyTrackingNumber').addEventListener('click', () => TF.copyText(TF.$('trackNumber').value, 'Tracking number copied'));
     document.querySelectorAll('[data-filter-card]').forEach((card) => card.addEventListener('click', (event) => {

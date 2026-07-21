@@ -146,7 +146,7 @@
 
   const statusLabels = {
     draft: 'Awaiting Payment',
-    payment_review: 'Partially Paid',
+    payment_review: 'Payment Review',
     confirmed: 'Paid',
     waiting_stock: 'Waiting for Stock',
     ready_to_pack: 'Paid / Ready to Pack',
@@ -160,7 +160,9 @@
     partial: 'Partially Paid',
     paid: 'Paid',
     overpaid: 'Overpaid',
-    verified: 'Verified'
+    verified: 'Verified',
+    submitted: 'For Verification',
+    rejected: 'Rejected'
   };
 
   function statusLabel(value) {
@@ -171,7 +173,7 @@
   function statusPill(value) {
     const key = String(value || '');
     const success = ['paid', 'overpaid', 'ready_to_pack', 'ready_to_ship', 'delivered', 'verified', 'completed'];
-    const warning = ['waiting_stock', 'partial', 'payment_review', 'packing', 'shipped', 'incoming', 'partially_received'];
+    const warning = ['waiting_stock', 'partial', 'payment_review', 'packing', 'shipped', 'incoming', 'partially_received', 'submitted'];
     const danger = ['cancelled', 'refunded', 'unpaid', 'voided', 'rejected'];
     const className = success.includes(key) ? 'ok' : warning.includes(key) ? 'warn' : danger.includes(key) ? 'danger' : '';
     return `<span class="pill ${className}">${esc(statusLabel(key))}</span>`;
@@ -206,6 +208,7 @@
     if (!nav) return;
     const links = [
       ['dashboard', './dashboard.html', 'Dashboard', true],
+      ['new-order', './new-order.html', 'New Order', can('create_orders')],
       ['orders', './orderpage.html', 'Orders', can('create_orders') || can('edit_orders') || can('confirm_payments')],
       ['todo', './todo.html', 'To Do', true],
       ['tracking', './tracking.html', 'Tracking & Updates', can('update_tracking') || isManagement()],

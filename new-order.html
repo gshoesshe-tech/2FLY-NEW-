@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta content="width=device-width,initial-scale=1" name="viewport"/>
+<title>New Order | 2FLY Daily Ops</title>
+<link href="./styles.css" rel="stylesheet"/>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="./config.js"></script>
+<script defer="" src="./common.js"></script>
+<script defer="" src="./app.js"></script>
+</head>
+<body data-page="new-order" data-required-role="team">
+<div class="toast" id="toast"></div>
+<div class="app-shell">
+<aside class="sidebar">
+<div class="side-brand"><div class="logo small">2F</div><div><strong>2FLY Daily Ops</strong><span>Orders • Stock • Tracking</span></div></div>
+<nav></nav>
+<div class="side-user"><span id="userEmail">—</span><strong id="userRole">—</strong><button class="btn ghost" id="logoutBtn">Log out</button></div>
+</aside>
+<section class="workspace">
+<header class="topbar"><div><h2>New Order</h2><p>Paste the customer order form, review the details, then save it.</p></div><div class="top-actions"><a class="btn" href="./orderpage.html">View Orders</a></div></header>
+<main class="page"><div class="page-guide"><strong>New Order = encoding only.</strong> Paste the form, check the autofilled categories, then save or submit the payment for verification.</div><section class="order-entry perm-create-orders" id="orderEntry">
+<div class="notice info edit-banner hidden" id="editOrderBanner"><div><strong>Editing an order</strong><br/><span id="editOrderLabel"></span></div><button class="btn" id="cancelEditBtn">Cancel edit</button></div>
+<div class="two-col wide-left">
+<article class="card">
+<div class="card-head"><div><h3>Paste order form</h3><p>Paste the complete order form. Customer details and category totals will be filled automatically.</p></div></div>
+<div class="card-body stack"><textarea class="paste-box" id="orderPaste" placeholder="Paste the complete 2FLY.GALLERIA order form here..."></textarea><button class="btn primary" id="parseOrderBtn">Read order form</button><div class="notice warn hidden" id="parseWarnings"></div></div>
+</article>
+<article class="card">
+<div class="card-head"><h3>Customer details</h3></div>
+<div class="card-body form-grid">
+<label>Name<input id="orderCustomer" required=""/></label>
+<label>Phone<input id="orderPhone"/></label>
+<label class="span-2">Facebook Link / Profile<input id="orderFacebook" placeholder="Paste Facebook or Messenger profile link"/></label>
+<label class="span-2">Address<textarea id="orderAddress"></textarea></label>
+<label>Actual order date<input id="orderDate" type="date"/></label>
+<label>Order type<select id="orderType"><option value="regular">Regular</option><option value="made_to_order">Made to Order</option></select></label>
+<label>Fulfillment<select id="fulfillmentMethod"><option value="unselected">Not selected</option><option value="jnt">J&amp;T</option><option value="lalamove">Lalamove</option><option value="walk_in">Walk-in / Pickup</option></select></label>
+<label class="hidden" id="releaseDateWrap">Expected release<input id="expectedReleaseDate" type="date"/></label>
+<label class="span-2">Notes<textarea id="orderNotes" placeholder="Special request, waiting design, customer concern..."></textarea></label>
+</div>
+</article>
+</div>
+<article class="card">
+<div class="card-head"><div><h3>Order categories</h3><p id="parsedSummary">No order parsed yet.</p><small class="muted">Design codes stay in the original order form. Inventory and order totals are tracked by category only.</small></div><button class="btn" id="addItemBtn">Add category</button></div>
+<div class="table-wrap"><table><thead><tr><th>Category</th><th>Qty</th><th>Unit price</th><th>Total</th><th></th></tr></thead><tbody id="parsedItemsBody"></tbody></table></div>
+</article>
+<div class="two-col">
+<article class="card">
+<div class="card-head"><h3>Order total and shipping</h3></div>
+<div class="card-body form-grid">
+<label>Customer shipping fee<input id="shippingFee" min="0" step="0.01" type="number" value="0"/></label>
+<label>Actual courier cost <span class="muted">optional</span><input id="courierCost" min="0" placeholder="Can be added later" step="0.01" type="number"/></label>
+<div class="span-2 totals-panel"><div><span>Products</span><strong id="orderProductTotal">₱0</strong></div><div><span>Shipping</span><strong id="orderShippingTotal">₱0</strong></div><div><span>Grand total</span><strong id="orderExpectedTotal">₱0</strong></div></div>
+</div>
+</article>
+<article class="card perm-create-orders">
+<div class="card-head"><div><h3>Submit payment for verification</h3><p>Enter what the customer sent. The assigned account handler will confirm it after checking GCash.</p></div></div>
+<div class="card-body form-grid">
+<label>Actual payment date<input id="paymentDate" type="date"/></label>
+<label>Amount sent<input id="paymentAmount" min="0" step="0.01" type="number"/></label>
+<label>Payment method<select id="paymentMethod"><option value="gcash">GCash</option><option value="cash">Cash</option><option value="bank">Bank</option><option value="other">Other</option></select></label>
+<label>Claimed receiving account<select id="paymentAccount"></select></label>
+<label>Reference number<input id="paymentReference" placeholder="Required for GCash"/></label>
+<label>Payment proof<input accept="image/*,application/pdf" id="paymentProof" type="file"/></label>
+<div class="notice info span-2">Submitting does not count as cash collected and does not reserve inventory yet. Those happen only after verification.</div>
+</div>
+</article>
+</div>
+<article class="card">
+<div class="card-head"><h3>Save order</h3></div>
+<div class="card-body action-grid">
+<button class="btn perm-create-orders" id="saveAwaitingBtn">Save as Awaiting Payment</button>
+<button class="btn primary perm-create-orders" id="saveSubmitBtn">Save &amp; Submit Payment</button>
+<button class="btn primary hidden" id="saveEditBtn">Save Order Changes</button>
+<p class="muted span-3">Verified full payment reserves available inventory. A submitted payment stays For Verification until the account handler confirms it.</p>
+</div>
+</article>
+</section><section class="card order-save-success hidden" id="orderSaveSuccess"><div class="card-body"><div class="success-icon">✓</div><div><h3>Order saved successfully</h3><p id="savedOrderMessage">The order is now recorded.</p></div><div class="success-actions"><button class="btn primary" id="createAnotherOrderBtn">Create Another Order</button><a class="btn" href="./orderpage.html" id="viewSavedOrderBtn">View Saved Order</a><a class="btn" href="./orderpage.html">Go to Orders</a></div></div></section></main>
+</section>
+</div>
+
+</body>
+</html>

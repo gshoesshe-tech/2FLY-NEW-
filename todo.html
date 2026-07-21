@@ -21,22 +21,24 @@
   <section class="workspace">
     <header class="topbar">
       <div><h2>To Do</h2><p>Automatic work queue based on the current order status.</p></div>
-      <div class="top-actions"><a class="btn primary" href="./orderpage.html">New / View Orders</a><button id="refreshBtn" class="btn">Refresh</button></div>
+      <div class="top-actions"><a class="btn primary" href="./new-order.html">New Order</a><button id="refreshBtn" class="btn">Refresh</button></div>
     </header>
-    <main class="page">
+    <main class="page"><div class="page-guide"><strong>To Do = next actions.</strong> Work from the most urgent item down. Each order shows the one action that should happen next.</div>
       <section class="todo-count-grid">
-        <button class="todo-count-card" data-task-card="payment"><span>Awaiting Payment</span><strong id="todoPaymentCount">0</strong></button>
+        <button class="todo-count-card" data-task-card="verification"><span>For Verification</span><strong id="todoVerificationCount">0</strong></button>
+        <button class="todo-count-card" data-task-card="payment"><span>Payment Not Submitted</span><strong id="todoPaymentCount">0</strong></button>
         <button class="todo-count-card" data-task-card="needs_packing"><span>Needs Packing</span><strong id="todoPackingCount">0</strong></button>
         <button class="todo-count-card" data-task-card="waiting_stock"><span>Waiting for Stock</span><strong id="todoStockCount">0</strong></button>
         <button class="todo-count-card" data-task-card="ready_to_ship"><span>Ready to Ship</span><strong id="todoReadyCount">0</strong></button>
-        <button class="todo-count-card danger" data-task-card="missing_tracking"><span>Missing Tracking</span><strong id="todoTrackingCount">0</strong></button>
+        <button class="todo-count-card danger" data-task-card="missing_tracking"><span>Missing J&amp;T Tracking</span><strong id="todoTrackingCount">0</strong></button>
         <button class="todo-count-card danger" data-task-card="overdue"><span>Overdue</span><strong id="todoOverdueCount">0</strong></button>
       </section>
 
       <article class="card">
         <div class="card-body todo-filter-grid">
-          <label>Work queue<select id="todoTaskFilter"><option value="all">All Tasks</option><option value="payment">Awaiting Payment</option><option value="needs_packing">Paid — Needs Packing</option><option value="packing">Currently Packing</option><option value="waiting_stock">Waiting for Stock</option><option value="ready_to_ship">Ready to Ship</option><option value="missing_tracking">Shipped — Missing Tracking</option><option value="overdue">Paid Too Long / Overdue</option><option value="customer_update">Customer Update Needed</option></select></label>
+          <label>Work queue<select id="todoTaskFilter"><option value="all">All Tasks</option><option value="verification">Payment For Verification</option><option value="payment">Payment Not Submitted</option><option value="needs_packing">Paid — Needs Packing</option><option value="packing">Currently Packing</option><option value="waiting_stock">Waiting for Stock</option><option value="ready_to_ship">Ready to Ship</option><option value="missing_tracking">Shipped — Missing J&amp;T Tracking</option><option value="overdue">Paid Too Long / Overdue</option><option value="customer_update">Customer Update Needed</option></select></label>
           <label>Team<select id="todoTeamFilter"><option value="all">All Teams</option><option value="customer_service">Customer Service</option><option value="packing">Packing</option><option value="shipping">Shipping</option><option value="owner">Owner Review</option></select></label>
+          <label>Fulfillment<select id="todoFulfillmentFilter"><option value="all">All Methods</option><option value="jnt">J&amp;T</option><option value="lalamove">Lalamove</option><option value="walk_in">Walk-in / Pickup</option><option value="unselected">Not Selected</option></select></label>
           <label>Date basis<select id="todoDateBasis"><option value="order">Order Date</option><option value="payment">Payment Date</option><option value="status">Last Status Update</option></select></label>
           <label>Date range<select id="todoPreset"><option value="all">All Dates</option><option value="today">Today</option><option value="yesterday">Yesterday</option><option value="last7">Last 7 Days</option><option value="this_week">This Week</option><option value="this_month">This Month</option><option value="custom">Custom Range</option></select></label>
           <label id="todoStartWrap" class="hidden">Start date<input id="todoStart" type="date"></label>
