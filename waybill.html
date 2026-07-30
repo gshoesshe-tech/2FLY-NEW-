@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Waybill | 2FLY</title>
+  <link rel="stylesheet" href="./styles.css">
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="./config.js"></script>
+  <script defer src="./common.js"></script>
+  <script defer src="./waybill.js"></script>
+</head>
+<body data-page="waybill" data-required-role="team" data-required-permission="update_tracking">
+<div id="toast" class="toast"></div>
+<div class="app-shell">
+  <aside class="sidebar">
+    <div class="side-brand"><div class="logo small">2F</div><div><strong>2FLY Daily Ops</strong><span>Orders • Stock • Tracking</span></div></div>
+    <nav></nav>
+    <div class="side-user"><span id="userEmail">—</span><strong id="userRole">—</strong><button id="logoutBtn" class="btn ghost">Log out</button></div>
+  </aside>
+  <section class="workspace">
+    <header class="topbar">
+      <div>
+        <h2>Waybill</h2>
+        <p>J&amp;T orders only. Upload the waybill early so staff can scan it quickly once the parcel is ready.</p>
+      </div>
+      <div class="top-actions">
+        <button id="refreshBtn" class="btn">Refresh</button>
+      </div>
+    </header>
+    <main class="page">
+      <section class="kpi-grid four">
+        <a class="kpi clickable" data-queue-card="all"><span>All J&amp;T orders</span><strong id="wbAllCount">0</strong></a>
+        <a class="kpi clickable" data-queue-card="missing"><span>Missing waybill</span><strong id="wbMissingCount">0</strong></a>
+        <a class="kpi clickable" data-queue-card="ready"><span>Ready to scan</span><strong id="wbReadyCount">0</strong></a>
+        <a class="kpi clickable" data-queue-card="delivered"><span>Delivered</span><strong id="wbDeliveredCount">0</strong></a>
+      </section>
+
+      <article class="card">
+        <div class="card-head filters-head">
+          <div>
+            <h3>Waybill queue</h3>
+            <p>Keep this simple: search the order, upload the waybill, save the J&amp;T tracking number, then mark it shipped once packed.</p>
+          </div>
+        </div>
+        <div class="waybill-filter-bar">
+          <label>
+            <span>Search</span>
+            <input id="wbSearch" placeholder="Search customer, order number, phone, tracking">
+          </label>
+          <label>
+            <span>Queue</span>
+            <select id="wbQueueFilter">
+              <option value="all">All</option>
+              <option value="missing">Missing Waybill</option>
+              <option value="ready">Ready to Scan</option>
+              <option value="delivered">Delivered</option>
+            </select>
+          </label>
+          <label>
+            <span>Main status</span>
+            <select id="wbStatusFilter">
+              <option value="all">All</option>
+              <option value="pending">Pending</option>
+              <option value="processing">Processing</option>
+              <option value="delivered">Delivered</option>
+            </select>
+          </label>
+          <label>
+            <span>Order date</span>
+            <select id="wbDatePreset">
+              <option value="all">All dates</option>
+              <option value="today">Today</option>
+              <option value="yesterday">Yesterday</option>
+              <option value="last7">Last 7 days</option>
+              <option value="this_week">This week</option>
+              <option value="this_month">This month</option>
+            </select>
+          </label>
+          <div class="filter-inline-actions">
+            <button id="wbClearBtn" class="btn" type="button">Clear</button>
+          </div>
+        </div>
+
+        <div class="waybill-layout">
+          <div class="waybill-table-pane">
+            <div class="waybill-table-wrap" id="waybillTableWrap"></div>
+          </div>
+          <aside class="waybill-side-panel" id="waybillSidePanel">
+            <div class="waybill-panel-empty">Select a J&amp;T order to manage its waybill.</div>
+          </aside>
+        </div>
+      </article>
+    </main>
+  </section>
+</div>
+</body>
+</html>

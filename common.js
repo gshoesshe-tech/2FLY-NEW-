@@ -210,6 +210,7 @@
       ['dashboard', './dashboard.html', 'Dashboard', true],
       ['new-order', './new-order.html', 'New Order', can('create_orders')],
       ['orders', './orderpage.html', 'Orders', can('create_orders') || can('edit_orders') || can('confirm_payments')],
+      ['waybill', './waybill.html', 'Waybill', can('update_tracking') || can('edit_orders') || isManagement()],
       ['todo', './todo.html', 'To Do', true],
       ['tracking', './tracking.html', 'Tracking & Updates', can('update_tracking') || isManagement()],
       ['inventory', './inventory.html', 'Inventory', true],

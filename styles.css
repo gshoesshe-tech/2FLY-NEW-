@@ -482,3 +482,42 @@ body[data-page="orders"] .order-filter-panel{grid-template-columns:repeat(5,minm
 @media(max-width:1100px){body[data-page="orders"] .order-filter-panel{grid-template-columns:repeat(3,1fr)}}
 @media(max-width:760px){body[data-page="orders"] .order-filter-panel{grid-template-columns:1fr 1fr}.simple-orders-table tbody tr.clean-order-row td[data-label="Fulfillment"],.simple-orders-table tbody tr.clean-order-row td[data-label="Status"],.simple-orders-table tbody tr.clean-order-row td[data-label="Action"]{grid-column:1/-1}.todo-fulfillment-table td[data-label="Fulfillment"],.todo-fulfillment-table td[data-label="Status"],.todo-fulfillment-table td[data-label="Action"]{grid-column:1/-1}}
 @media(max-width:520px){body[data-page="orders"] .order-filter-panel{grid-template-columns:1fr}}
+
+
+/* ========================================================================
+   WAYBILL TAB
+   ======================================================================== */
+.kpi-grid.four{grid-template-columns:repeat(4,minmax(0,1fr))}
+.kpi.clickable{cursor:pointer;text-decoration:none;color:var(--text);transition:.15s}
+.kpi.clickable:hover{border-color:#4a6d99;transform:translateY(-1px)}
+.waybill-filter-bar{display:grid;grid-template-columns:2fr repeat(3,minmax(160px,.8fr)) auto;gap:10px;padding:14px;border-bottom:1px solid var(--line);align-items:end}
+.waybill-filter-bar label{display:grid;gap:6px;font-size:11px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.045em}
+.waybill-layout{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(360px,.82fr);gap:0;min-height:650px}
+.waybill-table-pane{border-right:1px solid var(--line);min-width:0}
+.waybill-table-wrap{overflow:auto;max-height:calc(100vh - 300px)}
+.waybill-table{width:100%;border-collapse:collapse;min-width:860px}
+.waybill-table th,.waybill-table td{padding:12px;border-bottom:1px solid #e8ecf1;vertical-align:top}
+.waybill-table th{position:sticky;top:0;background:#f5f7fa;z-index:2;font-size:11px;color:#5f6c7b;text-transform:uppercase;letter-spacing:.055em}
+.waybill-row{cursor:pointer;transition:.14s background-color}
+.waybill-row:hover td{background:#fafcff}
+.waybill-row.selected td{background:#eef5ff}
+.waybill-row strong,.waybill-row small{display:block}
+.waybill-fulfillment-text{margin-top:6px;font-size:11px;color:var(--muted);font-weight:700}
+.waybill-side-panel{padding:16px;display:grid;align-content:start;gap:14px;background:linear-gradient(180deg,#fff,#fbfcfd);max-height:calc(100vh - 300px);overflow:auto}
+.waybill-panel-empty{border:1px dashed var(--line-strong);border-radius:8px;padding:24px;color:var(--muted);text-align:center;background:var(--panel-soft)}
+.waybill-panel-head{display:flex;justify-content:space-between;gap:12px;align-items:flex-start}
+.waybill-panel-head h3{margin:0 0 4px;font-size:18px}
+.waybill-panel-head p{margin:0;color:var(--muted)}
+.waybill-head-pills{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
+.waybill-info-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.waybill-info-grid>div{border:1px solid var(--line);background:var(--panel-soft);border-radius:6px;padding:10px}
+.waybill-info-grid span{display:block;color:var(--muted);font-size:11px;margin-bottom:4px}
+.waybill-info-grid strong{display:block;overflow-wrap:anywhere}
+.waybill-section{border:1px solid var(--line);background:#fff;border-radius:8px;padding:14px}
+.waybill-preview-box{border:1px dashed var(--line-strong);border-radius:8px;background:var(--panel-soft);padding:10px;min-height:240px;display:grid;place-items:center;overflow:hidden}
+.waybill-preview-image{max-width:100%;height:auto;display:block;border-radius:6px}
+.waybill-preview-frame{width:100%;min-height:480px;border:0;border-radius:6px;background:#fff}
+.waybill-inline-actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.small-note{font-size:12px}
+@media(max-width:1180px){.waybill-layout{grid-template-columns:1fr}.waybill-table-pane{border-right:0;border-bottom:1px solid var(--line)}.waybill-filter-bar{grid-template-columns:1fr 1fr}.filter-inline-actions{grid-column:1/-1}.waybill-table-wrap,.waybill-side-panel{max-height:none}.kpi-grid.four{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:640px){.waybill-filter-bar,.waybill-info-grid{grid-template-columns:1fr}.kpi-grid.four{grid-template-columns:1fr}}
