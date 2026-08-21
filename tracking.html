@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>J&T Tracking | 2FLY</title>
+  <title>J&T Tracking Records | 2FLY</title>
   <link rel="stylesheet" href="./styles.css">
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="./config.js"></script>
@@ -33,8 +33,8 @@
     <section class="workspace">
       <header class="topbar">
         <div>
-          <h2>J&amp;T Tracking</h2>
-          <p>J&amp;T orders only. Add or update the tracking number here.</p>
+          <h2>J&amp;T Tracking Records</h2>
+          <p>Read-only record of J&amp;T customers and their tracking numbers.</p>
         </div>
         <div class="top-actions">
           <button id="refreshBtn" class="btn">Refresh</button>
@@ -45,15 +45,15 @@
         <article class="card">
           <div class="card-head filters-head">
             <div>
-              <h3>J&amp;T Orders</h3>
-              <p>Only order number, customer name, and J&amp;T tracking number are shown.</p>
+              <h3>J&amp;T Customer Records</h3>
+              <p>Tracking numbers are displayed here only. They are not entered or edited on this page.</p>
             </div>
             <div class="filter-row">
               <input id="trackingSearch" placeholder="Search order number, name, or tracking number">
             </div>
           </div>
           <div class="table-wrap" id="trackingTable">
-            <div class="empty">Loading J&amp;T orders…</div>
+            <div class="empty">Loading J&amp;T records…</div>
           </div>
         </article>
       </main>
