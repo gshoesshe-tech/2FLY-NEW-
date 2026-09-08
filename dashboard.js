@@ -32,6 +32,12 @@
     return '';
   }
 
+  function orderProductValue(order) {
+    const totalDue = TF.num(order.total_due);
+    const shippingDue = TF.num(order.shipping_fee_due);
+    return Math.max(0, totalDue - shippingDue);
+  }
+
   function buildSelection() {
     const basis = TF.$('dashboardDateBasis').value;
     const { start, end } = selectedRange();
@@ -61,16 +67,13 @@
         .filter((row) => row.allocation_type === 'product')
         .reduce((sum, row) => sum + TF.num(row.amount), 0);
     }
-    return selection.selectedItems.reduce((sum, item) => sum + TF.num(item.line_total), 0);
+    return selection.selectedOrders.reduce((sum, order) => sum + orderProductValue(order), 0);
   }
 
   function shippingForSelection(selection) {
-    if (selection.basis === 'payment') {
-      return selection.selectedAllocations
-        .filter((row) => row.allocation_type === 'jnt_shipping')
-        .reduce((sum, row) => sum + TF.num(row.amount), 0);
-    }
-    return selection.selectedOrders.reduce((sum, order) => sum + TF.num(order.shipping_fee_due), 0);
+    return selection.selectedAllocations
+      .filter((row) => row.allocation_type === 'jnt_shipping')
+      .reduce((sum, row) => sum + TF.num(row.amount), 0);
   }
 
   function renderKpis(selection) {
@@ -85,6 +88,9 @@
     TF.$('kpiOrders').textContent = count.toLocaleString();
     TF.$('kpiPieces').textContent = pieces.toLocaleString();
     TF.$('kpiAverage').textContent = TF.money(count ? cash / count : 0);
+
+    const productNote = TF.$('kpiProductSales')?.parentElement?.querySelector('small');
+    if (productNote) productNote.textContent = selection.basis === 'payment' ? 'Verified product payment allocations' : 'Order value excluding shipping';
   }
 
   function groupDateForRecord(selection, order, payment) {
@@ -123,20 +129,21 @@
         const row = byDay.get(date);
         row.orderIds.add(order.id);
         row.pieces += TF.num(order.total_quantity);
-        row.shipping += TF.num(order.shipping_fee_due);
+        row.product += orderProductValue(order);
       });
 
       const dayByOrder = new Map();
       byDay.forEach((row, date) => row.orderIds.forEach((id) => dayByOrder.set(id, date)));
 
-      selection.selectedItems.forEach((item) => {
-        const date = dayByOrder.get(item.order_id);
-        if (date) byDay.get(date).product += TF.num(item.line_total);
-      });
-
       selection.selectedPayments.forEach((payment) => {
         const date = dayByOrder.get(payment.order_id);
         if (date) byDay.get(date).cash += TF.num(payment.amount);
+      });
+
+      selection.selectedAllocations.forEach((allocation) => {
+        const date = dayByOrder.get(allocation.order_id);
+        if (!date) return;
+        if (allocation.allocation_type === 'jnt_shipping') byDay.get(date).shipping += TF.num(allocation.amount);
       });
     }
 
@@ -175,13 +182,12 @@
     selection.selectedItems.forEach((item) => {
       const category = TF.state.categoryById.get(item.category_id);
       const name = category?.name || 'Unknown category';
-      const current = totals.get(name) || { pieces: 0, amount: 0 };
+      const current = totals.get(name) || { pieces: 0 };
       current.pieces += TF.num(item.quantity);
-      current.amount += TF.num(item.line_total);
       totals.set(name, current);
     });
     const rows = [...totals.entries()].sort((a, b) => b[1].pieces - a[1].pieces);
-    TF.$('categoryBreakdown').innerHTML = `<table><thead><tr><th>Category</th><th>Pieces</th><th>Order Value</th></tr></thead><tbody>${rows.map(([name, row]) => `<tr><td><strong>${TF.esc(name)}</strong></td><td>${row.pieces.toLocaleString()}</td><td>${TF.money(row.amount)}</td></tr>`).join('') || '<tr><td colspan="3" class="empty">No category records in this period.</td></tr>'}</tbody></table>`;
+    TF.$('categoryBreakdown').innerHTML = `<table><thead><tr><th>Category</th><th>Pieces</th></tr></thead><tbody>${rows.map(([name, row]) => `<tr><td><strong>${TF.esc(name)}</strong></td><td>${row.pieces.toLocaleString()}</td></tr>`).join('') || '<tr><td colspan="2" class="empty">No category records in this period.</td></tr>'}</tbody></table>`;
   }
 
   function updateFilterUi() {
