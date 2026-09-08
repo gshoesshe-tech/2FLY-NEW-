@@ -55,10 +55,28 @@
     return { basis, start, end, selectedOrders, selectedPayments, selectedAllocations, selectedItems };
   }
 
+  function productSalesForSelection(selection) {
+    if (selection.basis === 'payment') {
+      return selection.selectedAllocations
+        .filter((row) => row.allocation_type === 'product')
+        .reduce((sum, row) => sum + TF.num(row.amount), 0);
+    }
+    return selection.selectedItems.reduce((sum, item) => sum + TF.num(item.line_total), 0);
+  }
+
+  function shippingForSelection(selection) {
+    if (selection.basis === 'payment') {
+      return selection.selectedAllocations
+        .filter((row) => row.allocation_type === 'jnt_shipping')
+        .reduce((sum, row) => sum + TF.num(row.amount), 0);
+    }
+    return selection.selectedOrders.reduce((sum, order) => sum + TF.num(order.shipping_fee_due), 0);
+  }
+
   function renderKpis(selection) {
     const cash = selection.selectedPayments.reduce((sum, payment) => sum + TF.num(payment.amount), 0);
-    const product = selection.selectedAllocations.filter((row) => row.allocation_type === 'product').reduce((sum, row) => sum + TF.num(row.amount), 0);
-    const shipping = selection.selectedAllocations.filter((row) => row.allocation_type === 'jnt_shipping').reduce((sum, row) => sum + TF.num(row.amount), 0);
+    const product = productSalesForSelection(selection);
+    const shipping = shippingForSelection(selection);
     const pieces = selection.selectedOrders.reduce((sum, order) => sum + TF.num(order.total_quantity), 0);
     const count = selection.selectedOrders.length;
     TF.$('kpiCash').textContent = TF.money(cash);
@@ -105,18 +123,20 @@
         const row = byDay.get(date);
         row.orderIds.add(order.id);
         row.pieces += TF.num(order.total_quantity);
+        row.shipping += TF.num(order.shipping_fee_due);
       });
+
       const dayByOrder = new Map();
       byDay.forEach((row, date) => row.orderIds.forEach((id) => dayByOrder.set(id, date)));
+
+      selection.selectedItems.forEach((item) => {
+        const date = dayByOrder.get(item.order_id);
+        if (date) byDay.get(date).product += TF.num(item.line_total);
+      });
+
       selection.selectedPayments.forEach((payment) => {
         const date = dayByOrder.get(payment.order_id);
         if (date) byDay.get(date).cash += TF.num(payment.amount);
-      });
-      selection.selectedAllocations.forEach((allocation) => {
-        const date = dayByOrder.get(allocation.order_id);
-        if (!date) return;
-        if (allocation.allocation_type === 'product') byDay.get(date).product += TF.num(allocation.amount);
-        if (allocation.allocation_type === 'jnt_shipping') byDay.get(date).shipping += TF.num(allocation.amount);
       });
     }
 
