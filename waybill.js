@@ -14,7 +14,9 @@
   };
 
   function isJnt(order) {
-    return String(order?.fulfillment_method || '').toLowerCase() === 'jnt';
+    const raw = String(order?.fulfillment_method || '').trim().toLowerCase();
+    const normalized = raw.replace(/[^a-z0-9]/g, '');
+    return normalized === 'jnt' || normalized === 'jt';
   }
 
   function simpleStatus(order) {
@@ -312,9 +314,9 @@
   }
 
   async function load() {
-    const viewResult = await TF.state.supa.from('v_daily_ops_orders_v16').select('*').eq('fulfillment_method', 'jnt').order('order_date', { ascending: false }).order('created_at', { ascending: false }).limit(5000);
+    const viewResult = await TF.state.supa.from('v_daily_ops_orders_v16').select('*').order('order_date', { ascending: false }).order('created_at', { ascending: false }).limit(5000);
     if (viewResult.error) throw viewResult.error;
-    const baseRows = viewResult.data || [];
+    const baseRows = (viewResult.data || []).filter((row) => isJnt(row));
     const ids = baseRows.map((row) => row.id);
     if (!ids.length) {
       orders = [];
