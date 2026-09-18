@@ -38,7 +38,7 @@
 
   function queueOf(order) {
     if (simpleStatus(order) === 'delivered') return 'delivered';
-    return order.waybill_storage_path && String(order.tracking_number || '').trim() ? 'ready' : 'missing';
+    return order.waybill_storage_path ? 'ready' : 'missing';
   }
 
   function queueLabel(queue) {
@@ -124,8 +124,8 @@
         <td>${simpleStatusPill(simpleStatus(order))}<div class="waybill-fulfillment-text">J&amp;T</div></td>
         <td>${queuePill(order)}</td>
         <td>
-          <strong>${TF.esc(order.tracking_number || 'Not added yet')}</strong>
-          <small>${order.waybill_storage_path ? 'Waybill uploaded' : 'No waybill file yet'}</small>
+          <strong>${TF.esc(order.tracking_number || 'Add after scan')}</strong>
+          <small>${order.waybill_storage_path ? 'Barcode / waybill uploaded' : 'No barcode uploaded yet'}</small>
         </td>
         <td><button class="btn small" data-open-waybill="${order.id}">Open</button></td>
       </tr>`;
@@ -193,22 +193,22 @@
       </section>
 
       <section class="waybill-section">
-        <div class="dialog-section-head"><div><h4>Waybill file</h4><p class="muted">Upload the J&amp;T waybill once you generate it. Staff will scan this later.</p></div>${order.waybill_storage_path ? '<button id="wbOpenFileBtn" class="btn small" type="button">Open file</button>' : ''}</div>
+        <div class="dialog-section-head"><div><h4>Barcode / waybill</h4><p class="muted">Upload the J&amp;T barcode now. Tracking does not need to be entered yet.</p></div>${order.waybill_storage_path ? '<button id="wbOpenFileBtn" class="btn small" type="button">Open file</button>' : ''}</div>
         <div id="wbPreviewBox" class="waybill-preview-box">${order.waybill_storage_path ? '<div class="muted">Loading waybill preview…</div>' : '<div class="waybill-panel-empty">No waybill uploaded yet.</div>'}</div>
       </section>
 
       <section class="waybill-section">
-        <div class="dialog-section-head"><div><h4>Upload / update waybill</h4><p class="muted">This saves the tracking number and uploaded file to the order.</p></div></div>
+        <div class="dialog-section-head"><div><h4>Upload barcode</h4><p class="muted">Upload first. After staff scans the barcode, they can enter the J&amp;T tracking number here.</p></div></div>
         <form id="wbForm" class="form-grid cols-2">
-          <label>J&amp;T tracking number<input id="wbTrackingInput" value="${TF.esc(order.tracking_number || '')}" placeholder="Enter J&amp;T tracking" required></label>
-          <label>Waybill file<input id="wbFileInput" type="file" accept="image/*,application/pdf"></label>
+          <label>J&amp;T tracking number <small>(after scan)</small><input id="wbTrackingInput" value="${TF.esc(order.tracking_number || '')}" placeholder="Scan / enter tracking later"></label>
+          <label>Barcode / waybill file<input id="wbFileInput" type="file" accept="image/*,application/pdf"></label>
           <label class="span-2">Internal note<textarea id="wbInternalNote" placeholder="Optional note, for example: waybill generated and ready to scan."></textarea></label>
           <div class="waybill-inline-actions span-2">
-            <button class="btn primary" id="wbSaveBtn">Save waybill</button>
+            <button class="btn primary" id="wbSaveBtn">Save barcode</button>
             <button class="btn" id="wbMarkShippedBtn" type="button">Mark as shipped</button>
             <button class="btn" id="wbCopyTrackingBtn" type="button">Copy tracking</button>
           </div>
-          <div class="span-2 muted small-note">Only J&amp;T orders need a waybill and tracking number.</div>
+          <div class="span-2 muted small-note">Tracking is optional when uploading. It is only required before marking the parcel as shipped.</div>
         </form>
       </section>`;
 
@@ -263,18 +263,17 @@
       const tracking = TF.$('wbTrackingInput').value.trim();
       const file = TF.$('wbFileInput').files?.[0];
       const note = TF.$('wbInternalNote').value.trim();
-      if (!tracking) throw new Error('Add the J&T tracking number first.');
-      if (!file && !order.waybill_storage_path) throw new Error('Upload the waybill file first.');
+      if (!file && !order.waybill_storage_path) throw new Error('Upload the J&T barcode / waybill first.');
       const storagePath = file ? await uploadWaybill(file, order.id) : order.waybill_storage_path;
       const result = await TF.state.supa.rpc('save_order_waybill_v1', {
         p_order_id: order.id,
-        p_tracking_number: tracking,
+        p_tracking_number: tracking || null,
         p_waybill_storage_path: storagePath,
         p_fulfillment_method: 'jnt',
-        p_status_note: note || 'Waybill saved from the Waybill tab'
+        p_status_note: note || (tracking ? 'Barcode and tracking saved from the Waybill tab' : 'Barcode uploaded; tracking will be added after scan')
       });
       if (result.error) throw result.error;
-      TF.toast('Waybill saved');
+      TF.toast(tracking ? 'Barcode and tracking saved' : 'Barcode saved — tracking can be added after scan');
       await load();
     } catch (error) {
       TF.fail(error, 'Waybill save failed');
