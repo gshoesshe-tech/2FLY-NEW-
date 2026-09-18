@@ -313,11 +313,32 @@
     }
   }
 
+  async function loadRowsInChunks(table, selectColumns, filterColumn, ids, chunkSize = 150) {
+    const rows = [];
+    for (let i = 0; i < ids.length; i += chunkSize) {
+      const chunk = ids.slice(i, i + chunkSize);
+      const result = await TF.state.supa.from(table).select(selectColumns).in(filterColumn, chunk);
+      if (result.error) throw result.error;
+      rows.push(...(result.data || []));
+    }
+    return rows;
+  }
+
   async function load() {
-    const viewResult = await TF.state.supa.from('v_daily_ops_orders_v16').select('*').order('order_date', { ascending: false }).order('created_at', { ascending: false }).limit(5000);
+    // Pull the daily-ops view first, then identify J&T orders in the browser.
+    // We intentionally avoid an exact server-side equality filter because older
+    // records may contain values such as "J&T", "JNT", or "jnt".
+    const viewResult = await TF.state.supa
+      .from('v_daily_ops_orders_v16')
+      .select('*')
+      .order('order_date', { ascending: false })
+      .limit(5000);
+
     if (viewResult.error) throw viewResult.error;
+
     const baseRows = (viewResult.data || []).filter((row) => isJnt(row));
-    const ids = baseRows.map((row) => row.id);
+    const ids = baseRows.map((row) => row.id).filter(Boolean);
+
     if (!ids.length) {
       orders = [];
       itemMap = new Map();
@@ -325,18 +346,40 @@
       renderTable();
       return;
     }
-    const [orderResult, itemsResult] = await Promise.all([
-      TF.state.supa.from('orders').select('id,waybill_storage_path,waybill_uploaded_at,waybill_uploaded_by,tracking_number,fulfillment_method,status').in('id', ids),
-      TF.state.supa.from('order_items').select('order_id,category,category_code,quantity,line_total,line_number').in('order_id', ids).order('order_id').order('line_number')
-    ]);
-    if (orderResult.error || itemsResult.error) throw orderResult.error || itemsResult.error;
 
-    const orderExtras = new Map((orderResult.data || []).map((row) => [row.id, row]));
+    // Query in small chunks so a large number of orders cannot create an
+    // oversized Supabase URL / 400 Bad Request.
+    const [orderRows, itemRows] = await Promise.all([
+      loadRowsInChunks(
+        'orders',
+        'id,waybill_storage_path,waybill_uploaded_at,waybill_uploaded_by,tracking_number,fulfillment_method,status',
+        'id',
+        ids
+      ),
+      loadRowsInChunks(
+        'order_items',
+        'order_id,category_id,quantity,line_total,line_number',
+        'order_id',
+        ids
+      )
+    ]);
+
+    const orderExtras = new Map(orderRows.map((row) => [row.id, row]));
     const nextItemMap = new Map();
-    (itemsResult.data || []).forEach((item) => {
-      if (!nextItemMap.has(item.order_id)) nextItemMap.set(item.order_id, []);
-      nextItemMap.get(item.order_id).push(item);
-    });
+
+    itemRows
+      .sort((a, b) => String(a.order_id).localeCompare(String(b.order_id)) || TF.num(a.line_number) - TF.num(b.line_number))
+      .forEach((item) => {
+        const category = TF.state.categoryById.get(item.category_id);
+        const normalizedItem = {
+          ...item,
+          category: category?.name || 'Item',
+          category_code: category?.code || ''
+        };
+        if (!nextItemMap.has(item.order_id)) nextItemMap.set(item.order_id, []);
+        nextItemMap.get(item.order_id).push(normalizedItem);
+      });
+
     itemMap = nextItemMap;
     orders = baseRows.map((row) => ({ ...row, ...(orderExtras.get(row.id) || {}) }));
     refreshCounts();
