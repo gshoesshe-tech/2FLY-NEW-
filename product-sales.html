@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Product Sales | 2FLY Daily Ops</title>
+  <link rel="stylesheet" href="./styles.css">
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="./config.js"></script>
+  <script defer src="./common.js"></script>
+  <script defer src="./product-sales.js"></script>
+</head>
+<body data-page="product-sales" data-required-role="team" data-required-permission="view_daily_summary">
+<div id="toast" class="toast"></div>
+<div class="app-shell">
+  <aside class="sidebar">
+    <div class="side-brand"><div class="logo small">2F</div><div><strong>2FLY Daily Ops</strong><span>Orders • Sales • Tracking</span></div></div>
+    <nav></nav>
+    <div class="side-user"><span id="userEmail">—</span><strong id="userRole">—</strong><button id="logoutBtn" class="btn ghost">Log out</button></div>
+  </aside>
+
+  <section class="workspace">
+    <header class="topbar">
+      <div>
+        <h2>Product Sales</h2>
+        <p>Quick visual of how many pieces were sold per category on a selected day.</p>
+      </div>
+      <div class="top-actions"><button id="refreshBtn" class="btn">Refresh</button></div>
+    </header>
+
+    <main class="page">
+      <article class="card">
+        <div class="card-body product-sales-toolbar">
+          <button id="prevDayBtn" class="btn" type="button">← Previous</button>
+          <label>Date<input id="productSalesDate" type="date"></label>
+          <button id="todaySalesBtn" class="btn primary" type="button">Today</button>
+          <button id="nextDayBtn" class="btn" type="button">Next →</button>
+        </div>
+      </article>
+
+      <section class="kpi-grid four">
+        <article class="kpi"><span>Pieces sold</span><strong id="psPieces">0</strong></article>
+        <article class="kpi"><span>Paid orders</span><strong id="psOrders">0</strong></article>
+        <article class="kpi"><span>Categories sold</span><strong id="psCategories">0</strong></article>
+        <article class="kpi"><span>Top category</span><strong id="psTop">—</strong></article>
+      </section>
+
+      <article class="card">
+        <div class="card-head">
+          <div>
+            <h3>Sold by category</h3>
+            <p id="psDateNote">Paid orders only. Cancelled and refunded orders are excluded.</p>
+          </div>
+        </div>
+        <div class="card-body">
+          <div id="productSalesCards" class="product-sales-category-grid"></div>
+        </div>
+      </article>
+
+      <article class="card">
+        <div class="card-head">
+          <div>
+            <h3>Daily quantity breakdown</h3>
+            <p>Use this as the simple daily count: Boxers, Earrings, Tank Tops, Branded Shirts, and the rest.</p>
+          </div>
+        </div>
+        <div class="table-wrap" id="productSalesTable"></div>
+      </article>
+    </main>
+  </section>
+</div>
+</body>
+</html>
