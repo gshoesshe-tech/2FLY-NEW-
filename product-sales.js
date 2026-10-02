@@ -29,7 +29,6 @@
     );
 
     items.forEach((item) => {
-      if (item.is_system_included) return;
       const category = TF.state.categoryById.get(item.category_id);
       const id = item.category_id || 'unknown';
       if (!grouped.has(id)) {
@@ -109,7 +108,7 @@
 
     items = await loadRowsInChunks(
       'order_items',
-      'order_id,category_id,quantity,is_system_included',
+      'order_id,category_id,quantity',
       'order_id',
       ids
     );
