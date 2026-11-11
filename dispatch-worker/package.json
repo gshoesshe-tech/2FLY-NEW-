@@ -10,6 +10,7 @@
   },
   "scripts": {
     "deploy": "wrangler deploy",
-    "test": "node --test tests/tracker-integrated-legacy.test.mjs tests/integrated-dispatch.test.mjs"
+    "test": "node --test tests/tracker-integrated-legacy.test.mjs tests/integrated-dispatch.test.mjs",
+    "predeploy": "node validate-config.mjs"
   }
 }
