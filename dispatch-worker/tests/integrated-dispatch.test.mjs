@@ -132,7 +132,7 @@ test('waybill photo preserves packing photo, tracking may stay blank, and only h
     const second=await upload(env,'ship-token-abcdefghijklmnopqrstuvwxyz','waybill',3);
     let r=await j(await worker.fetch(req('/integrated/waybill',{method:'POST',body:{order_id:ORDER,photo_path:second,tracking:''},token:'ship-token-abcdefghijklmnopqrstuvwxyz'}),env));assert.equal(r.status,200);assert.equal(r.data.order.stage,'ready_for_pickup');assert.equal(r.data.order.tracking,'');
     let detail=await j(await worker.fetch(req(`/integrated/order?order_id=${ORDER}`,{token:'ship-token-abcdefghijklmnopqrstuvwxyz'}),env));assert.equal(detail.data.photos.length,2);assert.equal(detail.data.order.stage,'ready_for_pickup');
-    r=await j(await worker.fetch(req('/integrated/handover',{method:'POST',body:{order_id:ORDER},token:'ship-token-abcdefghijklmnopqrstuvwxyz'}),env));assert.equal(r.status,200);assert.equal(r.data.order.stage,'shipped');assert.equal(r.data.order.shipped_name,'Shipment Staff');assert.equal(mock.shippedCalls.length,1);assert.equal(mock.shippedCalls[0].payload.p_status,'shipped');assert.equal(mock.shippedCalls[0].payload.p_tracking_number,'');
+    r=await j(await worker.fetch(req('/integrated/handover',{method:'POST',body:{order_id:ORDER},token:'ship-token-abcdefghijklmnopqrstuvwxyz'}),env));assert.equal(r.status,200);assert.equal(r.data.order.stage,'shipped');assert.equal(r.data.order.shipped_name,'Shipment Staff');assert.match(r.data.order.shipped_at_ph,/Philippines|AM|PM|2026/i);assert.equal(mock.shippedCalls.length,1);assert.equal(mock.shippedCalls[0].payload.p_status,'shipped');assert.equal(mock.shippedCalls[0].payload.p_tracking_number,'');
   }finally{mock.restore();}
 });
 
