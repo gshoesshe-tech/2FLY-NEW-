@@ -1133,6 +1133,7 @@ Thank you for ordering!`
   }
 
   async function quickStatus(order, status, quiet = false) {
+    if (dispatchEnabled && dispatchManaged(order) && status === 'shipped') throw new Error('Confirm courier handover in Dispatch first.');
     const result = await TF.state.supa.rpc('update_order_operations_v14', {
       p_order_id: order.id,
       p_status: status,
@@ -1193,6 +1194,7 @@ Thank you for ordering!`
         if (button.dataset.action === 'pay') await openOrder(order.id, true, false);
         if (button.dataset.action === 'dispatch') { location.href = `./dispatch.html?order=${encodeURIComponent(order.id)}`; return; }
         if (button.dataset.action === 'processing') {
+          if (dispatchEnabled && dispatchManaged(order)) { location.href = `./dispatch.html?order=${encodeURIComponent(order.id)}`; return; }
           if (!hasFulfillment(order)) TF.toast('Set the fulfillment method first', true);
           else if (!['paid', 'overpaid'].includes(order.payment_status) || TF.num(order.pending_payment_count) > 0) TF.toast('Verify the full payment first', true);
           else if (TF.num(order.shortage_quantity) > 0) TF.toast('This order is still short on stock', true);
@@ -1200,6 +1202,7 @@ Thank you for ordering!`
         }
         if (button.dataset.action === 'openTracking') await openOrder(order.id, false, true);
         if (button.dataset.action === 'shipped') {
+          if (dispatchEnabled && dispatchManaged(order)) { location.href = `./dispatch.html?order=${encodeURIComponent(order.id)}`; return; }
           if (isJnt(order) && !order.tracking_number) {
             TF.toast('Add the J&T tracking number first', true);
             await openOrder(order.id, false, true);
