@@ -16,7 +16,7 @@
     return cat?.name || item.product_name || item.sku || 'Item';
   }
   function sourcePayload(order){ return order ? {
-    order_id:order.id,order_number:order.order_number,customer_name:order.customer_name||'',fulfillment_method:order.fulfillment_method||'',created_at:order.created_at||order.order_date,status:order.status||'',payment_status:order.payment_status||'',tracking_number:order.tracking_number||''
+    order_id:order.id,order_number:order.order_number,customer_name:order.customer_name||'',fulfillment_method:order.fulfillment_method||'',created_at:order.created_at||order.order_date,order_date:order.order_date||'',status:order.status||'',payment_status:order.payment_status||'',tracking_number:order.tracking_number||''
   }:null; }
 
   async function loadSourceOrders(){
@@ -49,7 +49,7 @@
   function renderTable(){
     const rows=filteredRecords();
     if(!rows.some(r=>r.order_id===selectedId))selectedId=rows[0]?.order_id||null;
-    TF.$('dispatchTable').innerHTML=`<table><thead><tr><th>Order</th><th>Customer</th><th>Entered</th><th>Dispatch status</th><th>Staff</th><th>Tracking</th><th>Missing</th></tr></thead><tbody>${rows.map(r=>`<tr data-dispatch-row="${TF.esc(r.order_id)}" class="${r.order_id===selectedId?'selected-row':''}"><td><strong>${TF.esc(r.order_number)}</strong></td><td>${TF.esc(r.customer_name||'—')}</td><td>${TF.formatDateTime(r.queued_at)}</td><td>${D.stagePill(r.stage)}</td><td>${TF.esc(r.claimed_name||r.packed_name||r.ready_name||r.shipped_name||'—')}</td><td>${TF.esc(r.tracking||'—')}</td><td>${Number(r.open_issue_count||0)?`<span class="pill danger">${r.open_issue_count} open</span>`:'—'}</td></tr>`).join('')||'<tr><td colspan="7" class="empty">No Dispatch orders match this filter.</td></tr>'}</tbody></table>`;
+    TF.$('dispatchTable').innerHTML=`<table><thead><tr><th>Order</th><th>Customer</th><th>Entered</th><th>Payment</th><th>Dispatch status</th><th>Staff</th><th>Tracking</th><th>Missing</th></tr></thead><tbody>${rows.map(r=>`<tr data-dispatch-row="${TF.esc(r.order_id)}" class="${r.order_id===selectedId?'selected-row':''}"><td><strong>${TF.esc(r.order_number)}</strong>${Number(r.late_input_days||0)>0?`<br><span class="pill danger">🚨 LATE INPUT +${r.late_input_days}d</span>`:''}</td><td>${TF.esc(r.customer_name||'—')}</td><td>${TF.formatDateTime(r.queued_at)}</td><td>${TF.statusPill(r.source_payment_status||'unpaid')}</td><td>${D.stagePill(r.stage)}</td><td>${TF.esc(r.claimed_name||r.packed_name||r.ready_name||r.shipped_name||'—')}</td><td>${TF.esc(r.tracking||'—')}</td><td>${Number(r.open_issue_count||0)?`<span class="pill danger">${r.open_issue_count} open</span>`:'—'}</td></tr>`).join('')||'<tr><td colspan="8" class="empty">No Dispatch orders match this filter.</td></tr>'}</tbody></table>`;
     TF.$('dispatchTable').querySelectorAll('[data-dispatch-row]').forEach(row=>row.addEventListener('click',()=>{selectedId=row.dataset.dispatchRow;renderTable();renderDetail();}));
     renderDetail();
   }
