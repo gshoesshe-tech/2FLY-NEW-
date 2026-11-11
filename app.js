@@ -759,7 +759,8 @@
     if (order.facebook_profile) actions.push(`<a href="${TF.esc(facebookUrl(order.facebook_profile))}" target="_blank" rel="noopener noreferrer">Open Facebook</a>`);
     if (TF.num(order.pending_payment_count) > 0 && TF.can('confirm_payments')) actions.push(`<button type="button" data-action="pay" data-id="${order.id}">Review Payment</button>`);
     if (!TF.num(order.pending_payment_count) && (TF.can('create_orders') || TF.can('edit_orders')) && ['unpaid', 'partial'].includes(order.payment_status) && !['cancelled', 'refunded'].includes(order.status)) actions.push(`<button type="button" data-action="pay" data-id="${order.id}">Submit Payment</button>`);
-    if (TF.can('update_tracking') && simpleStatus(order) === 'pending' && hasFulfillment(order) && ['paid', 'overpaid'].includes(order.payment_status) && TF.num(order.shortage_quantity) <= 0) actions.push(`<button type="button" data-action="processing" data-id="${order.id}">Start Processing</button>`);
+    if (dispatchEnabled && dispatchManaged(order) && ['paid', 'overpaid'].includes(order.payment_status) && TF.num(order.shortage_quantity) <= 0 && !['shipped','delivered'].includes(order.status)) actions.push(`<button type="button" data-action="dispatch" data-id="${order.id}">Open Dispatch</button>`);
+    else if (TF.can('update_tracking') && simpleStatus(order) === 'pending' && hasFulfillment(order) && ['paid', 'overpaid'].includes(order.payment_status) && TF.num(order.shortage_quantity) <= 0) actions.push(`<button type="button" data-action="processing" data-id="${order.id}">Start Processing</button>`);
     if (TF.can('update_tracking') && simpleStatus(order) === 'processing') {
       if (isJnt(order) && !order.tracking_number) actions.push(`<button type="button" data-action="openTracking" data-id="${order.id}">Add J&T Tracking</button>`);
       else actions.push(`<button type="button" data-action="complete" data-id="${order.id}">Mark Delivered</button>`);
@@ -773,6 +774,7 @@
     if (simpleStatus(order) === 'delivered') return `<span class="action-state completed">Completed</span>`;
     if (TF.num(order.pending_payment_count) > 0) return `<button class="btn primary small" data-action="pay" data-id="${order.id}">Review Payment</button>`;
     if ((TF.can('create_orders') || TF.can('edit_orders')) && ['unpaid', 'partial'].includes(order.payment_status)) return `<button class="btn primary small" data-action="pay" data-id="${order.id}">Submit Payment</button>`;
+    if (dispatchEnabled && dispatchManaged(order) && ['paid', 'overpaid'].includes(order.payment_status) && TF.num(order.shortage_quantity) <= 0 && !['shipped','delivered'].includes(order.status)) return `<button class="btn primary small" data-action="dispatch" data-id="${order.id}">Open Dispatch</button>`;
     if (!TF.can('update_tracking')) return `<button class="btn small order-view-btn" data-action="view" data-id="${order.id}">View</button>`;
     if (simpleStatus(order) === 'pending') {
       if (!hasFulfillment(order)) return `<button class="btn primary small" data-action="view" data-id="${order.id}">Set Fulfillment</button>`;
@@ -813,11 +815,11 @@
     TF.$('ordersTable').innerHTML = `
       <table class="orders-clean-table simple-orders-table">
         <colgroup>
-          <col class="col-select"><col class="col-order"><col class="col-customer"><col class="col-fulfillment"><col class="col-status"><col class="col-payment"><col class="col-items"><col class="col-total"><col class="col-tracking"><col class="col-date"><col class="col-actions">
+          <col class="col-select"><col class="col-order"><col class="col-customer"><col class="col-fulfillment"><col class="col-status"><col class="col-status"><col class="col-payment"><col class="col-items"><col class="col-total"><col class="col-tracking"><col class="col-date"><col class="col-actions">
         </colgroup>
         <thead><tr>
           <th><input id="selectAllOrders" type="checkbox" aria-label="Select all visible orders" ${rows.length && rows.every((row) => selectedOrderIds.has(row.id)) ? 'checked' : ''}></th>
-          <th>Order</th><th>Customer</th><th>Fulfillment</th><th>Status</th><th>Payment</th><th>Items</th><th>Total</th><th>Tracking</th><th>Date</th><th>Action</th>
+          <th>Order</th><th>Customer</th><th>Fulfillment</th><th>Status</th><th>Dispatch</th><th>Payment</th><th>Items</th><th>Total</th><th>Tracking</th><th>Date</th><th>Action</th>
         </tr></thead>
         <tbody>${rows.map((order) => {
           const alert = order.paid_not_shipped_alert || needsTracking(order);
@@ -828,6 +830,7 @@
             <td data-label="Customer"><strong class="customer-name-text">${TF.esc(order.customer_name)}</strong><div class="customer-subline"><span>${TF.esc(order.phone || 'No phone')}</span>${order.facebook_profile ? `<a class="facebook-mini-link" href="${TF.esc(facebookUrl(order.facebook_profile))}" target="_blank" rel="noopener noreferrer" title="Open Facebook profile">f</a>` : ''}</div></td>
             <td data-label="Fulfillment">${fulfillmentBadge(order)}</td>
             <td data-label="Status">${simpleStatusPill(order)}</td>
+            <td data-label="Dispatch">${dispatchStatusCell(order)}</td>
             <td data-label="Payment">${TF.num(order.pending_payment_count) > 0
               ? `<span class="payment-state is-submitted">For Verification</span><small>${TF.esc(order.latest_submission_account_name || 'Submitted account')}</small>`
               : `<span class="payment-state ${paid ? 'is-paid' : order.payment_status === 'partial' ? 'is-partial' : 'is-unpaid'}">${TF.esc(TF.statusLabel(order.payment_status))}</span><small>${TF.esc(order.latest_payment_account_name || 'No account')}</small>`}</td>
@@ -837,7 +840,7 @@
             <td data-label="Date"><strong>${TF.formatDate(order.order_date)}</strong><small>${TF.esc(orderAge(order))}</small></td>
             <td data-label="Action">${orderActions(order)}</td>
           </tr>`;
-        }).join('') || '<tr><td colspan="11" class="empty">No orders found.</td></tr>'}</tbody>
+        }).join('') || '<tr><td colspan="12" class="empty">No orders found.</td></tr>'}</tbody>
       </table>`;
     updateBulkBar();
   }
@@ -855,6 +858,7 @@
     ]);
     if (ordersResult.error || paymentsResult.error || itemsResult.error) throw ordersResult.error || paymentsResult.error || itemsResult.error;
     orders = ordersResult.data || [];
+    await refreshDispatchState();
     orderItemsByOrder = new Map();
     (itemsResult.data || []).forEach((item) => {
       const current = orderItemsByOrder.get(item.order_id) || [];
@@ -992,6 +996,8 @@ Thank you for ordering!`
     TF.$('customerUpdatePreview').textContent = customerUpdate(order);
     TF.$('activityList').innerHTML = (activityResult.data || []).map((activity) => `<div class="timeline-item"><span></span><div><strong>${TF.esc(activity.action.replaceAll('_', ' '))}</strong><small>${TF.formatDateTime(activity.created_at)} • ${TF.esc(activity.full_name || activity.email || 'System')}</small>${activity.old_status !== activity.new_status && simpleStatusFromRaw(activity.old_status) !== simpleStatusFromRaw(activity.new_status) ? `<p>${simpleStatusLabel(simpleStatusFromRaw(activity.old_status))} → ${simpleStatusLabel(simpleStatusFromRaw(activity.new_status))}</p>` : ''}</div></div>`).join('') || '<div class="empty">No activity history yet.</div>';
     TF.$('detailRaw').textContent = order.raw_order_form || 'No original form saved.';
+    if (has('openDispatchOrderBtn')) TF.$('openDispatchOrderBtn').href = `./dispatch.html?order=${encodeURIComponent(order.id)}`;
+    if (has('orderDispatchPanel') && window.TwoFlyDispatch) { await safeSyncDispatch(order.id); await window.TwoFlyDispatch.renderOrderPanel(order.id, TF.$('orderDispatchPanel')); }
     TF.$('editOrderBtn').classList.toggle('hidden', !TF.can('edit_orders') || ['packing', 'ready_to_ship', 'shipped', 'delivered', 'cancelled', 'refunded'].includes(order.status));
     TF.$('cancelOrderBtn').classList.toggle('hidden', !TF.isManagement() || ['cancelled', 'refunded', 'delivered'].includes(order.status));
     TF.$('orderDialog').showModal();
@@ -1185,6 +1191,7 @@ Thank you for ordering!`
       try {
         if (button.dataset.action === 'view') await openOrder(order.id);
         if (button.dataset.action === 'pay') await openOrder(order.id, true, false);
+        if (button.dataset.action === 'dispatch') { location.href = `./dispatch.html?order=${encodeURIComponent(order.id)}`; return; }
         if (button.dataset.action === 'processing') {
           if (!hasFulfillment(order)) TF.toast('Set the fulfillment method first', true);
           else if (!['paid', 'overpaid'].includes(order.payment_status) || TF.num(order.pending_payment_count) > 0) TF.toast('Verify the full payment first', true);
@@ -1252,11 +1259,13 @@ Thank you for ordering!`
       for (let order of selected) {
         try {
           if (action === 'processing') {
+            if (dispatchEnabled && dispatchManaged(order)) throw new Error('use Dispatch for J&T/Lalamove packing');
             if (!hasFulfillment(order)) throw new Error('fulfillment is not selected');
             if (!['paid', 'overpaid'].includes(order.payment_status) || TF.num(order.pending_payment_count) > 0) throw new Error('payment is not fully verified');
             if (TF.num(order.shortage_quantity) > 0) throw new Error('stock is short');
             await quickStatus(order, 'packing');
           } else if (action === 'delivered') {
+            if (dispatchEnabled && dispatchManaged(order) && order.status !== 'shipped') throw new Error('confirm courier handover in Dispatch first');
             if (simpleStatus(order) !== 'processing') throw new Error('start processing first');
             if (isJnt(order) && !order.tracking_number) throw new Error('J&T tracking is missing');
             if (order.status !== 'shipped') await quickStatus(order, 'shipped', true);
