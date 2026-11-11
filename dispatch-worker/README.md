@@ -32,3 +32,18 @@ The Worker keeps Web Push failures out of the order-save path. In-app notificati
 
 ## Rollback
 The old tracker endpoints remain in the Worker. If the integrated frontend has an issue, leave the new D1 tables in place and roll the Worker/site files back to the prior GitHub commit; no migration deletes the old tracker tables.
+
+## GitHub / Workers Builds
+The deployment source is in the `dispatch-worker` folder of the existing 2FLY Numbers repository.
+
+Before connecting/deploying:
+1. In Cloudflare D1, open the EXISTING `2fly-dispatch-db` and copy its database ID into `wrangler.toml`.
+2. Replace `REPLACE_WITH_EXISTING_TRACKER_ORIGIN` with the exact current standalone tracker HTTPS origin.
+3. Replace `REPLACE_WITH_CURRENT_2FLY_SUPABASE_URL` with the current 2FLY Numbers Supabase URL.
+4. Keep `SUPABASE_ANON_KEY` and `VAPID_PRIVATE_KEY` as Cloudflare secrets, never in GitHub.
+5. The `predeploy` safety check intentionally blocks deployment while critical placeholders remain.
+
+If you connect the existing Worker to GitHub in Cloudflare Workers Builds, use this same repository and set the project/root directory to `dispatch-worker`. Do not create a second Worker, D1 database, or R2 bucket.
+
+## Tests
+Run `npm test` with a current Node release that includes `node:sqlite`. The suite covers both the preserved standalone tracker backend and the integrated Dispatch workflow.
