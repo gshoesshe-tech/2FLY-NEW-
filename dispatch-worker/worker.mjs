@@ -152,8 +152,10 @@ CREATE TABLE IF NOT EXISTS dispatch_push_subscriptions (
 CREATE INDEX IF NOT EXISTS dispatch_push_user ON dispatch_push_subscriptions(user_id, active);`;
 async function ensureIntegratedSchema(env){
  if(integratedSchemaReady)return;
- const installed=await stmt(env,"SELECT name FROM sqlite_master WHERE type='table' AND name='dispatch_orders'").first();
- if(!installed)await env.DB.exec(INTEGRATED_SCHEMA_SQL);
+ // The schema is intentionally idempotent: CREATE TABLE/INDEX/TRIGGER IF NOT EXISTS.
+ // Run the full schema once per Worker isolate so a partially-created D1 database
+ // is repaired instead of assuming dispatch_orders means every Dispatch table exists.
+ await env.DB.exec(INTEGRATED_SCHEMA_SQL);
  integratedSchemaReady=true;
 }
 async function bodyBytes(req,max){const reader=req.body?.getReader();if(!reader)throw err('Request body required.');const chunks=[];let n=0;while(true){const {done,value}=await reader.read();if(done)break;n+=value.length;if(n>max){await reader.cancel();throw err('Upload or request is too large.',413);}chunks.push(value);}const out=new Uint8Array(n);let at=0;for(const c of chunks){out.set(c,at);at+=c.length;}return out;}
