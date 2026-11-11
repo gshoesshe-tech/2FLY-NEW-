@@ -23,9 +23,5 @@ ALLOWED_ORIGINS = "https://2flynumbers.netlify.app"
 SUPABASE_URL = "https://yzzqhenrbzapnpsgwngu.supabase.co/"
 # Start false. Enable only after the integrated flow has been checked in production.
 CLEANUP_ENABLED = "false"
-# VAPID public key is safe to expose; add after generating a pair.
-VAPID_PUBLIC_KEY = ""
-VAPID_SUBJECT = ""
-
 [triggers]
 crons = ["*/10 * * * *"]
