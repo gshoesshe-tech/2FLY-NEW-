@@ -5,7 +5,7 @@
   if (!TF) return;
 
   const WORKER = 'https://twofly-dispatch-photos.gshoeswho.workers.dev';
-  const state = { ready: false, me: null, lastError: '', checked: false, checking: null, notificationTimer: null, objectUrls: new Set() };
+  const state = { ready: false, me: null, lastError: '', checked: false, checking: null, notificationTimer: null, objectUrls: new Set(), audioContext: null, pendingAlarm: false };
 
   async function token() {
     await TF.ready;
@@ -64,6 +64,7 @@
       customer_name: order.customer_name || '',
       fulfillment_method: order.fulfillment_method || '',
       created_at: order.created_at || order.order_date,
+      order_date: order.order_date || '',
       status: order.status || '',
       payment_status: order.payment_status || '',
       tracking_number: order.tracking_number || ''
@@ -211,6 +212,81 @@
     document.addEventListener('click', event => { if (!wrap.contains(event.target)) document.getElementById('dispatchBellPanel')?.classList.add('hidden'); });
   }
 
+  function dispatchAlarmVisual(active, urgent = false) {
+    const bell = document.getElementById('dispatchBellButton');
+    if (bell) {
+      bell.classList.toggle('dispatch-alarm', Boolean(active));
+      bell.classList.toggle('dispatch-alarm-urgent', Boolean(active && urgent));
+    }
+    document.title = active ? `🚨 ${document.title.replace(/^🚨\s*/, '')}` : document.title.replace(/^🚨\s*/, '');
+  }
+
+  async function playDispatchAlarm(urgent = false) {
+    try {
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (!AudioCtx) return false;
+      state.audioContext ||= new AudioCtx();
+      if (state.audioContext.state === 'suspended') await state.audioContext.resume();
+      if (state.audioContext.state !== 'running') return false;
+      const now = state.audioContext.currentTime;
+      const tones = urgent ? [[880,0],[660,.16],[880,.32],[660,.48]] : [[740,0],[980,.18]];
+      tones.forEach(([freq,offset]) => {
+        const osc = state.audioContext.createOscillator();
+        const gain = state.audioContext.createGain();
+        osc.type = 'sine'; osc.frequency.value = freq;
+        gain.gain.setValueAtTime(0.0001, now + offset);
+        gain.gain.exponentialRampToValueAtTime(0.16, now + offset + .015);
+        gain.gain.exponentialRampToValueAtTime(0.0001, now + offset + .13);
+        osc.connect(gain); gain.connect(state.audioContext.destination);
+        osc.start(now + offset); osc.stop(now + offset + .15);
+      });
+      state.pendingAlarm = false;
+      return true;
+    } catch {
+      state.pendingAlarm = true;
+      return false;
+    }
+  }
+
+  function alarmedIds() {
+    try { return new Set(JSON.parse(sessionStorage.getItem('2fly.dispatch.alarmed') || '[]')); }
+    catch { return new Set(); }
+  }
+
+  function saveAlarmedIds(ids) {
+    sessionStorage.setItem('2fly.dispatch.alarmed', JSON.stringify([...ids].slice(-200)));
+  }
+
+  async function handleNotificationAlarm(notifications = []) {
+    const unread = notifications.filter(n => !n.is_read);
+    const urgent = unread.some(n => String(n.body || '').includes('🚨 LATE INPUT'));
+    dispatchAlarmVisual(unread.length > 0, urgent);
+    if (!unread.length) return;
+
+    const seen = alarmedIds();
+    const fresh = unread.filter(n => !seen.has(n.id));
+    if (!fresh.length) return;
+    fresh.forEach(n => seen.add(n.id));
+    saveAlarmedIds(seen);
+
+    const freshUrgent = fresh.some(n => String(n.body || '').includes('🚨 LATE INPUT'));
+    const latest = fresh[0];
+    TF.toast(freshUrgent ? `🚨 URGENT: ${latest.body}` : `🔔 ${latest.body}`);
+    const played = await playDispatchAlarm(freshUrgent);
+    if (!played) state.pendingAlarm = true;
+  }
+
+  const unlockDispatchAudio = async () => {
+    if (!state.audioContext) {
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (AudioCtx) state.audioContext = new AudioCtx();
+    }
+    try { if (state.audioContext?.state === 'suspended') await state.audioContext.resume(); } catch {}
+    if (state.pendingAlarm) await playDispatchAlarm(true);
+  };
+  document.addEventListener('pointerdown', unlockDispatchAudio, { passive:true });
+  document.addEventListener('keydown', unlockDispatchAudio);
+
   async function loadNotifications() {
     if (!(await probe())) return;
     injectBell();
@@ -218,7 +294,8 @@
       const data = await api('/integrated/notifications?limit=30');
       const badge = document.getElementById('dispatchUnreadBadge'); if (badge) { badge.textContent = data.unread || 0; badge.classList.toggle('hidden', !data.unread); }
       const listEl = document.getElementById('dispatchNotificationList'); if (!listEl) return;
-      listEl.innerHTML = (data.notifications || []).map(n => `<button class="dispatch-notification ${n.is_read ? 'read' : 'unread'}" data-notification-id="${TF.esc(n.id)}" data-notification-order="${TF.esc(n.order_id)}" type="button"><strong>${TF.esc(n.body)}</strong><small>${TF.formatDateTime(n.created_at)}</small></button>`).join('') || '<div class="empty">No Dispatch alerts yet.</div>';
+      await handleNotificationAlarm(data.notifications || []);
+      listEl.innerHTML = (data.notifications || []).map(n => `<button class="dispatch-notification ${n.is_read ? 'read' : 'unread'} ${String(n.body||'').includes('🚨 LATE INPUT') ? 'urgent' : ''}" data-notification-id="${TF.esc(n.id)}" data-notification-order="${TF.esc(n.order_id)}" type="button"><strong>${TF.esc(n.body)}</strong><small>${TF.formatDateTime(n.created_at)}</small></button>`).join('') || '<div class="empty">No Dispatch alerts yet.</div>';
       listEl.querySelectorAll('[data-notification-id]').forEach(button => button.addEventListener('click', async () => {
         try { await api('/integrated/notifications/read', { method:'POST', body:{ id:button.dataset.notificationId } }); } catch {}
         location.href = `./dispatch.html?order=${encodeURIComponent(button.dataset.notificationOrder)}`;
@@ -231,7 +308,7 @@
     if (!(await probe())) return;
     injectBell(); await loadNotifications();
     if (state.notificationTimer) clearInterval(state.notificationTimer);
-    state.notificationTimer = setInterval(() => { if (!document.hidden) loadNotifications(); }, 60000);
+    state.notificationTimer = setInterval(() => { if (!document.hidden) loadNotifications(); }, 15000);
     document.addEventListener('visibilitychange', () => { if (!document.hidden) loadNotifications(); });
   }
 
