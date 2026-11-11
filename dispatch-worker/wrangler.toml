@@ -24,8 +24,5 @@ ALLOWED_ORIGINS = "https://2flynumbers.netlify.app"
 SUPABASE_URL = "https://yzzqhenrbzapnpsgwngu.supabase.co/"
 # Start false. Enable only after the integrated flow has been checked in production.
 CLEANUP_ENABLED = "false"
-[secrets]
-required = ["SUPABASE_ANON_KEY"]
-
 [triggers]
 crons = ["*/10 * * * *"]
