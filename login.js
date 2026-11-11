@@ -13,7 +13,7 @@
     $('loginForm').addEventListener('submit',async e=>{
       e.preventDefault(); const btn=e.submitter; setLoading(btn,true); $('loginError').classList.add('hidden');
       const {error}=await supa.auth.signInWithPassword({email:$('loginEmail').value.trim(),password:$('loginPassword').value});
-      setLoading(btn,false); if(error){$('loginError').textContent=error.message;$('loginError').classList.remove('hidden');return;} location.replace('./dashboard.html');
+      setLoading(btn,false); if(error){$('loginError').textContent=error.message;$('loginError').classList.remove('hidden');return;} location.replace(sessionStorage.getItem('2fly.afterLogin')||'./dashboard.html'); sessionStorage.removeItem('2fly.afterLogin');
     });
   }
   init();
