@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {DatabaseSync} from 'node:sqlite';
 import {readFileSync} from 'node:fs';
 import {webcrypto} from 'node:crypto';
-import worker from '../worker/worker-integrated.mjs';
+import worker from '../worker.mjs';
 globalThis.crypto ||= webcrypto;
 
 const ORDER='22222222-2222-4222-8222-222222222222';
