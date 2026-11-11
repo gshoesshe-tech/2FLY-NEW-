@@ -211,6 +211,7 @@
       ['product-sales', './product-sales.html', 'Product Sales', can('view_daily_summary') || isManagement()],
       ['new-order', './new-order.html', 'New Order', can('create_orders')],
       ['orders', './orderpage.html', 'Orders', can('create_orders') || can('edit_orders') || can('confirm_payments')],
+      ['dispatch', './dispatch.html', 'Dispatch', can('edit_orders') || can('update_tracking') || isManagement()],
       ['waybill', './waybill.html', 'Waybill', can('update_tracking') || can('edit_orders') || isManagement()],
       ['todo', './todo.html', 'To Do', true],
       ['tracking', './tracking.html', 'Tracking & Updates', can('update_tracking') || isManagement()],
@@ -312,6 +313,8 @@
     if (sessionResult.error) throw sessionResult.error;
     const session = sessionResult.data.session;
     if (!session) {
+      const target = location.pathname.split('/').pop() + location.search + location.hash;
+      if (target && target !== 'index.html') sessionStorage.setItem('2fly.afterLogin', target);
       location.replace('./index.html');
       return state;
     }
@@ -335,4 +338,12 @@
     isOwner, can, statusLabel, statusPill, accountOptions, categoryOptions,
     copyText, ready: init()
   };
+
+  window.__2FLY_DISPATCH_CLIENT_LOADING__ = true;
+  if (!document.querySelector('script[src$="dispatch-client.js"]')) {
+    const dispatchScript = document.createElement('script');
+    dispatchScript.src = './dispatch-client.js';
+    dispatchScript.defer = true;
+    document.head.appendChild(dispatchScript);
+  }
 })();
