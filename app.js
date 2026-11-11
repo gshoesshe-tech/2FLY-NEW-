@@ -13,6 +13,8 @@
   let lastExpected = 0;
   let paymentDatesByOrder = new Map();
   let orderItemsByOrder = new Map();
+  let dispatchEnabled = false;
+  let dispatchByOrder = new Map();
   const selectedOrderIds = new Set();
   const SAVED_FILTERS_KEY = '2fly.dailyOps.orderFilters.v1';
 
@@ -34,6 +36,46 @@
   function hasFulfillment(value) {
     const method = typeof value === 'string' ? value : value?.fulfillment_method;
     return ['jnt', 'lalamove', 'walk_in'].includes(String(method || '').toLowerCase());
+  }
+
+  function dispatchManaged(value) {
+    const method = typeof value === 'string' ? value : value?.fulfillment_method;
+    return ['jnt', 'lalamove'].includes(String(method || '').toLowerCase());
+  }
+
+  function dispatchEligibleSource(order) {
+    return dispatchManaged(order) && ['paid', 'overpaid'].includes(String(order?.payment_status || '').toLowerCase()) &&
+      !['cancelled', 'refunded', 'shipped', 'delivered'].includes(String(order?.status || '').toLowerCase());
+  }
+
+  async function refreshDispatchState() {
+    dispatchEnabled = false; dispatchByOrder = new Map();
+    const D = window.TwoFlyDispatch; if (!D) return;
+    try {
+      if (!(await D.probe())) return;
+      dispatchEnabled = true;
+      let current = await D.list({ limit: 500 });
+      const existingIds = new Set(current.map(row => row.order_id));
+      const syncRows = orders.filter(order => dispatchEligibleSource(order) || existingIds.has(order.id));
+      if (syncRows.length) await D.syncOrders(syncRows);
+      current = await D.list({ limit: 500 });
+      dispatchByOrder = new Map(current.map(row => [row.order_id, row]));
+    } catch (error) { dispatchEnabled = false; console.warn('Dispatch status unavailable; existing Orders flow remains available.', error); }
+  }
+
+  async function safeSyncDispatch(orderId) {
+    const D = window.TwoFlyDispatch; if (!D || !orderId) return;
+    try { if (await D.probe()) await D.syncOrderById(orderId); }
+    catch (error) { console.warn('Dispatch sync failed without blocking Orders.', error); }
+  }
+
+  function dispatchStatusCell(order) {
+    if (!dispatchEnabled) return '<span class="muted">Not active</span>';
+    const row = dispatchByOrder.get(order.id);
+    if (!row) return dispatchEligibleSource(order) ? '<span class="muted">Not queued</span>' : '<span class="muted">—</span>';
+    const staff = row.stage === 'packing' && row.claimed_name ? '<small>Packing — ' + TF.esc(row.claimed_name) + '</small>' : '';
+    const issues = TF.num(row.open_issue_count) > 0 ? '<small>' + TF.num(row.open_issue_count) + ' open missing-item issue(s)</small>' : '';
+    return (window.TwoFlyDispatch?.stagePill(row.stage) || TF.esc(row.stage)) + staff + issues;
   }
 
   function fulfillmentText(value) {
