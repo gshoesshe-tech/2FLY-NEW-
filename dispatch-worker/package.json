@@ -1,0 +1,14 @@
+{
+  "name": "twofly-dispatch-photos-worker",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@mmmike/web-push": "^1.5.0"
+  },
+  "devDependencies": {
+    "wrangler": "^4.0.0"
+  },
+  "scripts": {
+    "deploy": "wrangler deploy"
+  }
+}
