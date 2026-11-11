@@ -1,0 +1,31 @@
+name = "twofly-dispatch-photos"
+main = "worker.mjs"
+compatibility_date = "2026-11-01"
+
+# IMPORTANT: replace only the database_id with the ID of your EXISTING
+# 2fly-dispatch-db. Do not create a second D1 database.
+[[d1_databases]]
+binding = "DB"
+database_name = "2fly-dispatch-db"
+database_id = "REPLACE_WITH_EXISTING_D1_DATABASE_ID"
+
+# Reuse the EXISTING private bucket.
+[[r2_buckets]]
+binding = "PHOTOS"
+bucket_name = "2fly-dispatch-photos"
+
+[vars]
+# Keep the standalone tracker's existing Netlify origin in ALLOWED_ORIGIN.
+ALLOWED_ORIGIN = "REPLACE_WITH_EXISTING_TRACKER_ORIGIN"
+# Integrated 2FLY Numbers origin. Multiple origins can be comma-separated later.
+ALLOWED_ORIGINS = "https://2flynumbers.netlify.app"
+# Use the current 2FLY Numbers Supabase URL. Do not commit the anon key here.
+SUPABASE_URL = "REPLACE_WITH_CURRENT_2FLY_SUPABASE_URL"
+# Start false. Enable only after the integrated flow has been checked in production.
+CLEANUP_ENABLED = "false"
+# VAPID public key is safe to expose; add after generating a pair.
+VAPID_PUBLIC_KEY = ""
+VAPID_SUBJECT = ""
+
+[triggers]
+crons = ["*/10 * * * *"]
