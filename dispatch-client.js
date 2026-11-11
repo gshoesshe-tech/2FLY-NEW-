@@ -203,10 +203,9 @@
 
   function injectBell() {
     if (document.getElementById('dispatchBellButton') || !document.querySelector('.top-actions')) return;
-    const wrap = document.createElement('div'); wrap.className='dispatch-bell-wrap'; wrap.innerHTML=`<button id="dispatchBellButton" class="btn dispatch-bell-button" type="button" aria-label="Dispatch notifications">🔔<span id="dispatchUnreadBadge" class="dispatch-unread-badge hidden">0</span></button><div id="dispatchBellPanel" class="dispatch-bell-panel hidden"><div class="dispatch-bell-head"><strong>Dispatch alerts</strong><button id="enableDispatchPush" class="btn small" type="button">Enable phone notifications</button></div><div id="dispatchNotificationList" class="dispatch-notification-list"><div class="empty">Loading…</div></div></div>`;
+    const wrap = document.createElement('div'); wrap.className='dispatch-bell-wrap'; wrap.innerHTML=`<button id="dispatchBellButton" class="btn dispatch-bell-button" type="button" aria-label="Dispatch notifications">🔔<span id="dispatchUnreadBadge" class="dispatch-unread-badge hidden">0</span></button><div id="dispatchBellPanel" class="dispatch-bell-panel hidden"><div class="dispatch-bell-head"><strong>Dispatch alerts</strong></div><div id="dispatchNotificationList" class="dispatch-notification-list"><div class="empty">Loading…</div></div></div>`;
     document.querySelector('.top-actions').prepend(wrap);
     document.getElementById('dispatchBellButton').addEventListener('click', () => document.getElementById('dispatchBellPanel').classList.toggle('hidden'));
-    document.getElementById('enableDispatchPush').addEventListener('click', async (event) => { const b=event.currentTarget;TF.setLoading(b,true,'Enabling…');try{await enablePush();TF.toast('Phone notifications enabled');}catch(e){TF.fail(e,'Notifications not enabled');}finally{TF.setLoading(b,false);} });
     document.addEventListener('click', event => { if (!wrap.contains(event.target)) document.getElementById('dispatchBellPanel')?.classList.add('hidden'); });
   }
 
@@ -234,6 +233,6 @@
     document.addEventListener('visibilitychange', () => { if (!document.hidden) loadNotifications(); });
   }
 
-  window.TwoFlyDispatch = { WORKER, state, api, probe, syncOrder, syncOrderById, syncOrders, list, detail, missingList, uploadPhoto, photoObjectUrl, revokeObjectUrls, stageLabel, stagePill, renderOrderPanel, loadNotifications, enablePush };
+  window.TwoFlyDispatch = { WORKER, state, api, probe, syncOrder, syncOrderById, syncOrders, list, detail, missingList, uploadPhoto, photoObjectUrl, revokeObjectUrls, stageLabel, stagePill, renderOrderPanel, loadNotifications };
   bootNotifications().catch(error => console.warn('Dispatch bell unavailable:', error.message));
 })();
