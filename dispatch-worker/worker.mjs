@@ -16,6 +16,8 @@ const INTEGRATED_SCHEMA_STATEMENTS = [
     customer_name TEXT NOT NULL DEFAULT '',
     fulfillment_method TEXT NOT NULL DEFAULT '',
     source_created_at TEXT NOT NULL,
+    source_order_date TEXT NOT NULL DEFAULT '',
+    late_input_days INTEGER NOT NULL DEFAULT 0,
     source_status TEXT NOT NULL DEFAULT '',
     source_payment_status TEXT NOT NULL DEFAULT '',
     tracking TEXT NOT NULL DEFAULT '',
@@ -139,6 +141,10 @@ const INTEGRATED_SCHEMA_STATEMENTS = [
 async function ensureIntegratedSchema(env){
   if(integratedSchemaReady)return;
   for(const sql of INTEGRATED_SCHEMA_STATEMENTS) await env.DB.prepare(sql).run();
+  const cols=await env.DB.prepare("PRAGMA table_info(dispatch_orders)").all();
+  const names=new Set((cols.results||[]).map(x=>x.name));
+  if(!names.has('source_order_date')) await env.DB.prepare("ALTER TABLE dispatch_orders ADD COLUMN source_order_date TEXT NOT NULL DEFAULT ''").run();
+  if(!names.has('late_input_days')) await env.DB.prepare("ALTER TABLE dispatch_orders ADD COLUMN late_input_days INTEGER NOT NULL DEFAULT 0").run();
   integratedSchemaReady=true;
 }
 async function bodyBytes(req,max){const reader=req.body?.getReader();if(!reader)throw err('Request body required.');const chunks=[];let n=0;while(true){const {done,value}=await reader.read();if(done)break;n+=value.length;if(n>max){await reader.cancel();throw err('Upload or request is too large.',413);}chunks.push(value);}const out=new Uint8Array(n);let at=0;for(const c of chunks){out.set(c,at);at+=c.length;}return out;}
@@ -261,43 +267,60 @@ function requireShip(s){if(!s.canShip)throw err('This account does not have ship
 function validOrderId(v){return typeof v==='string'&&/^[a-f0-9-]{36}$/i.test(v);}
 function normalizeFulfillment(v){const raw=String(v||'').trim().toLowerCase().replace(/[^a-z0-9]/g,'');if(raw==='jnt'||raw==='jt')return'jnt';if(raw==='lalamove')return'lalamove';if(raw==='walkin'||raw==='pickup'||raw==='walkinpickup')return'walk_in';return String(v||'').trim().toLowerCase();}
 function dispatchEligible(d){
- const status=String(d.status||d.source_status||'').toLowerCase(),payment=String(d.payment_status||d.source_payment_status||'').toLowerCase(),method=normalizeFulfillment(d.fulfillment_method);
- return ['paid','overpaid'].includes(payment)&&['jnt','lalamove'].includes(method)&&!['cancelled','refunded','shipped','delivered'].includes(status);
+ const status=String(d.status||d.source_status||'').toLowerCase(),method=normalizeFulfillment(d.fulfillment_method);
+ return ['jnt','lalamove'].includes(method)&&!['cancelled','refunded','shipped','delivered'].includes(status);
+}
+function lateInputDays(orderDate,createdAt){
+ const d=String(orderDate||'').slice(0,10);
+ if(!/^\d{4}-\d{2}-\d{2}$/.test(d)||!createdAt)return 0;
+ const entered=phDate(createdAt);
+ const a=Date.parse(d+'T00:00:00Z'),b=Date.parse(entered+'T00:00:00Z');
+ return Number.isFinite(a)&&Number.isFinite(b)?Math.max(0,Math.floor((b-a)/86400000)):0;
 }
 function cleanDispatchInput(d){
  const order_id=String(d.order_id||d.id||'');if(!validOrderId(order_id))throw err('Invalid order ID.');
  const order_number=String(d.order_number||'').trim().slice(0,100);if(!order_number)throw err('Order number is required.');
  const source_created_at=String(d.created_at||d.source_created_at||'').trim();if(!source_created_at||!Number.isFinite(Date.parse(source_created_at)))throw err('Order entry time is required.');
- return {order_id,order_number,customer_name:String(d.customer_name||'').trim().slice(0,150),fulfillment_method:normalizeFulfillment(d.fulfillment_method),source_created_at,
+ const source_order_date=String(d.order_date||d.source_order_date||'').trim().slice(0,10);
+ return {order_id,order_number,customer_name:String(d.customer_name||'').trim().slice(0,150),fulfillment_method:normalizeFulfillment(d.fulfillment_method),source_created_at,source_order_date,
   source_status:String(d.status||d.source_status||'').toLowerCase(),source_payment_status:String(d.payment_status||d.source_payment_status||'').toLowerCase(),tracking:String(d.tracking_number||d.tracking||'').trim().slice(0,150)};
 }
 async function insertEvent(env,orderId,type,s,note='',photoPath='',issueId=null,at=nowISO()){
  await stmt(env,'INSERT INTO dispatch_events(order_id,issue_id,event_type,actor_user_id,actor_name,event_at,note,photo_path) VALUES(?,?,?,?,?,?,?,?)',orderId,issueId,type,s?.id||null,s?.name||'System',at,String(note||'').slice(0,4000),photoPath||null).run();
 }
-async function insertNotification(env,audience,orderId,orderNumber,type,ctx){
+async function insertNotification(env,audience,orderId,orderNumber,type,ctx,bodyOverride=''){
  const dedup=`${type}:${orderId}`,id=uuid(),at=nowISO();
- const body=type==='packing'?`New order ${orderNumber} needs packing`:`Order ${orderNumber} packed — ready for waybill`;
- const title='2FLY Dispatch';
+ const body=bodyOverride||(type==='packing'?`New order ${orderNumber} needs packing`:`Order ${orderNumber} packed — ready for waybill`);
+ const title=type==='late_input'?'2FLY URGENT':'2FLY Dispatch';
  const result=await stmt(env,'INSERT OR IGNORE INTO dispatch_notifications(id,dedup_key,audience,order_id,title,body,created_at) VALUES(?,?,?,?,?,?,?)',id,dedup,audience,orderId,title,body,at).run();
  if(result.meta?.changes){const work=pushAudience(env,audience,{title,body,order_id:orderId}).catch(e=>console.error('Push delivery failed',String(e)));if(ctx?.waitUntil)ctx.waitUntil(work);else work.catch(()=>{});}
 }
 async function syncDispatchOne(env,s,input,ctx){
- const d=cleanDispatchInput(input),at=nowISO();let row=await stmt(env,'SELECT * FROM dispatch_orders WHERE order_id=?',d.order_id).first();
+ const d=cleanDispatchInput(input),at=nowISO(),lateDays=lateInputDays(d.source_order_date,d.source_created_at);
+ let row=await stmt(env,'SELECT * FROM dispatch_orders WHERE order_id=?',d.order_id).first();
  const terminal=['cancelled','refunded'].includes(d.source_status)?'cancelled':['shipped','delivered'].includes(d.source_status)?'shipped':null;
  if(!row){
-  if(!dispatchEligible(d)&&!terminal)return null;
-  if(terminal)return null;
-  await stmt(env,`INSERT INTO dispatch_orders(order_id,order_number,customer_name,fulfillment_method,source_created_at,source_status,source_payment_status,tracking,stage,queued_at,updated_at,last_synced_at)
-   VALUES(?,?,?,?,?,?,?,?, 'needs_packing',?,?,?)`,d.order_id,d.order_number,d.customer_name,d.fulfillment_method,d.source_created_at,d.source_status,d.source_payment_status,d.tracking,d.source_created_at,at,at).run();
-  await insertEvent(env,d.order_id,'queued',s,'Entered Needs packing from 2FLY Numbers.','',null,at);
-  await insertNotification(env,'packing',d.order_id,d.order_number,'packing',ctx);
+  if(!dispatchEligible(d)||terminal)return null;
+  await stmt(env,`INSERT INTO dispatch_orders(order_id,order_number,customer_name,fulfillment_method,source_created_at,source_order_date,late_input_days,source_status,source_payment_status,tracking,stage,queued_at,updated_at,last_synced_at)
+   VALUES(?,?,?,?,?,?,?,?,?,?,'needs_packing',?,?,?)`,d.order_id,d.order_number,d.customer_name,d.fulfillment_method,d.source_created_at,d.source_order_date,lateDays,d.source_status,d.source_payment_status,d.tracking,d.source_created_at,at,at).run();
+  const paid=['paid','overpaid'].includes(d.source_payment_status);
+  const lateNote=lateDays>0?` Late input by ${lateDays} day${lateDays===1?'':'s'}.`:'';
+  await insertEvent(env,d.order_id,'queued',s,`Entered Needs packing from 2FLY Numbers.${lateNote}`,'',null,at);
+  if(lateDays>0){
+   const dateLabel=d.source_order_date||'earlier date';
+   const paymentNote=paid?'':' — PAYMENT PENDING';
+   await insertNotification(env,'packing',d.order_id,d.order_number,'late_input',ctx,`🚨 LATE INPUT: Order ${d.order_number} dated ${dateLabel} was entered ${lateDays} day${lateDays===1?'':'s'} late — PRIORITIZE PACKING${paymentNote}`);
+  }else{
+   const body=paid?`New order ${d.order_number} needs packing`:`New order ${d.order_number} added — PAYMENT PENDING, prepare for packing`;
+   await insertNotification(env,'packing',d.order_id,d.order_number,'new_order',ctx,body);
+  }
   row=await stmt(env,'SELECT * FROM dispatch_orders WHERE order_id=?',d.order_id).first();return row;
  }
  let nextStage=row.stage;
  if(terminal==='cancelled'&&row.stage!=='shipped')nextStage='cancelled';
  if(terminal==='shipped')nextStage='shipped';
- await stmt(env,`UPDATE dispatch_orders SET order_number=?,customer_name=?,fulfillment_method=?,source_status=?,source_payment_status=?,tracking=CASE WHEN ?<>'' THEN ? ELSE tracking END,stage=?,updated_at=?,last_synced_at=?,version=version+1 WHERE order_id=?`,
-  d.order_number,d.customer_name,d.fulfillment_method,d.source_status,d.source_payment_status,d.tracking,d.tracking,nextStage,at,at,d.order_id).run();
+ await stmt(env,`UPDATE dispatch_orders SET order_number=?,customer_name=?,fulfillment_method=?,source_order_date=?,late_input_days=?,source_status=?,source_payment_status=?,tracking=CASE WHEN ?<>'' THEN ? ELSE tracking END,stage=?,updated_at=?,last_synced_at=?,version=version+1 WHERE order_id=?`,
+  d.order_number,d.customer_name,d.fulfillment_method,d.source_order_date,lateDays,d.source_status,d.source_payment_status,d.tracking,d.tracking,nextStage,at,at,d.order_id).run();
  return stmt(env,'SELECT * FROM dispatch_orders WHERE order_id=?',d.order_id).first();
 }
 async function integratedSync(req,env,s,ctx){const d=await bodyJSONSized(req,60000);const row=await syncDispatchOne(env,s,d,ctx);return json({ok:true,dispatch:row});}
@@ -305,7 +328,7 @@ async function integratedSyncMany(req,env,s,ctx){const d=await bodyJSONSized(req
 async function integratedList(env,url){
  const q=String(url.searchParams.get('q')||'').trim().slice(0,150),stage=String(url.searchParams.get('stage')||'all'),limit=Math.max(1,Math.min(500,parseInt(url.searchParams.get('limit'))||200));let where='1=1',args=[];
  if(stage!=='all'){where+=' AND d.stage=?';args.push(stage);}if(q){where+=' AND (instr(lower(d.order_number),lower(?))>0 OR instr(lower(d.customer_name),lower(?))>0 OR instr(lower(d.tracking),lower(?))>0)';args.push(q,q,q);}
- const sql=`SELECT d.*,(SELECT count(*) FROM dispatch_photos p WHERE p.order_id=d.order_id AND p.state='attached') AS photo_count,(SELECT count(*) FROM dispatch_missing_issues i WHERE i.order_id=d.order_id AND i.status='open') AS open_issue_count FROM dispatch_orders d WHERE ${where} ORDER BY CASE WHEN d.stage='needs_packing' THEN 0 WHEN d.stage='packing' THEN 1 WHEN d.stage='packed' THEN 2 WHEN d.stage='ready_for_pickup' THEN 3 WHEN d.stage='shipped' THEN 4 ELSE 5 END,d.queued_at ASC,d.updated_at DESC LIMIT ?`;
+ const sql=`SELECT d.*,(SELECT count(*) FROM dispatch_photos p WHERE p.order_id=d.order_id AND p.state='attached') AS photo_count,(SELECT count(*) FROM dispatch_missing_issues i WHERE i.order_id=d.order_id AND i.status='open') AS open_issue_count FROM dispatch_orders d WHERE ${where} ORDER BY CASE WHEN d.stage='needs_packing' THEN 0 WHEN d.stage='packing' THEN 1 WHEN d.stage='packed' THEN 2 WHEN d.stage='ready_for_pickup' THEN 3 WHEN d.stage='shipped' THEN 4 ELSE 5 END,CASE WHEN d.stage='needs_packing' THEN d.late_input_days ELSE 0 END DESC,d.queued_at ASC,d.updated_at DESC LIMIT ?`;
  args.push(limit);const rows=await stmt(env,sql,...args).all();return json({records:rows.results});
 }
 async function integratedGet(env,url){const id=String(url.searchParams.get('order_id')||'');if(!validOrderId(id))throw err('Invalid order ID.');const order=await stmt(env,'SELECT * FROM dispatch_orders WHERE order_id=?',id).first();if(!order)return json({order:null,photos:[],events:[],issues:[]});const [photos,events,issues]=await env.DB.batch([
@@ -345,7 +368,7 @@ async function markSupabaseShipped(env,s,order){
  const payload={p_order_id:order.order_id,p_status:'shipped',p_fulfillment_method:order.fulfillment_method,p_tracking_number:order.tracking||'',p_actual_courier_cost:null,p_shipped_date:phDate(),p_delivered_date:null,p_customer_update_note:'',p_status_note:`Courier handover confirmed by ${s.name} through Dispatch`};
  const response=await supaFetch(env,s.token,'/rest/v1/rpc/update_order_operations_v14',{method:'POST',body:JSON.stringify(payload)});if(!response.ok){const t=await response.text();throw err('Could not mark the order shipped in 2FLY Numbers: '+(t||response.statusText),409);}return true;
 }
-async function integratedHandover(req,env,s){requireShip(s);const d=await bodyJSON(req),id=String(d.order_id||'');if(!validOrderId(id))throw err('Invalid order ID.');let order=await stmt(env,'SELECT * FROM dispatch_orders WHERE order_id=?',id).first();if(!order)throw err('Dispatch order not found.',404);if(order.stage==='shipped')return json({ok:true,order});if(order.stage!=='ready_for_pickup')throw err('Add the waybill proof before confirming courier handover.',409);if(d.tracking){const tracking=String(d.tracking).trim().slice(0,150);await stmt(env,'UPDATE dispatch_orders SET tracking=?,updated_at=? WHERE order_id=?',tracking,nowISO(),id).run();order={...order,tracking};}
+async function integratedHandover(req,env,s){requireShip(s);const d=await bodyJSON(req),id=String(d.order_id||'');if(!validOrderId(id))throw err('Invalid order ID.');let order=await stmt(env,'SELECT * FROM dispatch_orders WHERE order_id=?',id).first();if(!order)throw err('Dispatch order not found.',404);if(order.stage==='shipped')return json({ok:true,order});if(order.stage!=='ready_for_pickup')throw err('Add the waybill proof before confirming courier handover.',409);if(!['paid','overpaid'].includes(String(order.source_payment_status||'').toLowerCase()))throw err('Payment is not verified yet. Confirm payment before courier handover.',409);if(d.tracking){const tracking=String(d.tracking).trim().slice(0,150);await stmt(env,'UPDATE dispatch_orders SET tracking=?,updated_at=? WHERE order_id=?',tracking,nowISO(),id).run();order={...order,tracking};}
  await markSupabaseShipped(env,s,order);const at=nowISO();const phAt=phDateTime(at);const updated=await stmt(env,`UPDATE dispatch_orders SET stage='shipped',source_status='shipped',shipped_by=?,shipped_name=?,shipped_at=?,shipped_at_ph=?,updated_at=?,last_synced_at=?,version=version+1 WHERE order_id=? RETURNING *`,s.id,s.name,at,phAt,at,at,id).first();await insertEvent(env,id,'handed_to_courier',s,`Courier handover confirmed — ${phAt} Philippine time.`,'',null,at);return json({ok:true,order:updated});}
 async function integratedIssueCreate(req,env,s){if(!s.canPack&&!s.canShip)throw err('This account cannot report missing items.',403);const d=await bodyJSON(req),orderId=String(d.order_id||''),photo=String(d.photo_path||''),qty=parseInt(d.missing_quantity);if(!validOrderId(orderId)||!Number.isInteger(qty)||qty<=0)throw err('Order and missing quantity are required.');const order=await stmt(env,'SELECT * FROM dispatch_orders WHERE order_id=?',orderId).first();if(!order)throw err('Dispatch order not found.',404);await assertUploadedPhoto(env,photo,orderId,s,'missing_issue');const id=uuid(),at=nowISO(),itemKey=String(d.item_key||'').slice(0,200),itemLabel=String(d.item_label||'').trim().slice(0,300),note=String(d.note||'').trim().slice(0,4000);if(!itemLabel||!note)throw err('Select the missing item and add a note.');await attachPhoto(env,photo,id,at);await stmt(env,`INSERT INTO dispatch_missing_issues(id,order_id,item_key,item_label,missing_quantity,note,status,created_by,created_name,created_at) VALUES(?,?,?,?,?,?,'open',?,?,?)`,id,orderId,itemKey,itemLabel,qty,note,s.id,s.name,at).run();await insertEvent(env,orderId,'missing_item_reported',s,`${qty} × ${itemLabel}: ${note}`,photo,id,at);return json({ok:true,issue_id:id});}
 async function integratedIssueResolve(req,env,s){if(!s.canPack&&!s.canShip)throw err('This account cannot resolve missing items.',403);const d=await bodyJSON(req),issueId=String(d.issue_id||''),note=String(d.note||'').trim().slice(0,4000),photo=String(d.photo_path||'');const issue=await stmt(env,"SELECT * FROM dispatch_missing_issues WHERE id=? AND status='open'",issueId).first();if(!issue)throw err('Open missing-item report not found.',404);const at=nowISO();if(photo){await assertUploadedPhoto(env,photo,issue.order_id,s,'missing_resolution');await attachPhoto(env,photo,issueId,at);}await stmt(env,`UPDATE dispatch_missing_issues SET status='resolved',resolved_by=?,resolved_name=?,resolved_at=?,resolution_note=? WHERE id=? AND status='open'`,s.id,s.name,at,note,issueId).run();await insertEvent(env,issue.order_id,'missing_item_resolved',s,note||'Missing-item report resolved.',photo,issueId,at);return json({ok:true});}
