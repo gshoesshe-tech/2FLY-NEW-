@@ -340,9 +340,9 @@
   };
 
   window.__2FLY_DISPATCH_CLIENT_LOADING__ = true;
-  if (!document.querySelector('script[src$="dispatch-client.js"]')) {
+  if (!document.querySelector('script[src*="dispatch-client.js"]')) {
     const dispatchScript = document.createElement('script');
-    dispatchScript.src = './dispatch-client.js';
+    dispatchScript.src = './dispatch-client.js?v=20261112-0305';
     dispatchScript.defer = true;
     document.head.appendChild(dispatchScript);
   }
