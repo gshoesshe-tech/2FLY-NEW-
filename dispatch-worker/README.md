@@ -47,3 +47,4 @@ If you connect the existing Worker to GitHub in Cloudflare Workers Builds, use t
 
 ## Tests
 Run `npm test` with a current Node release that includes `node:sqlite`. The suite covers both the preserved standalone tracker backend and the integrated Dispatch workflow.
+<!-- Initial Cloudflare Workers build trigger: 2026-11-12 -->
