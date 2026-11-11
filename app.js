@@ -472,6 +472,7 @@
       TF.toast(submitPayment ? 'Order saved and payment sent for verification' : 'Order saved as Awaiting Payment');
       const savedOrderId = result.data?.order_id || '';
       const savedOrderNumber = result.data?.order_number || '';
+      await safeSyncDispatch(savedOrderId);
       resetForm();
       if (has('orderSaveSuccess')) {
         TF.$('orderEntry').classList.add('hidden');
@@ -588,8 +589,9 @@
         p_actual_courier_cost: TF.$('courierCost').value.trim() === '' ? null : TF.num(TF.$('courierCost').value)
       });
       if (shippingResult.error) throw shippingResult.error;
-      TF.toast('Order changes saved');
       const savedId = editingOrderId;
+      await safeSyncDispatch(savedId);
+      TF.toast('Order changes saved');
       resetForm();
       if (has('orderSaveSuccess')) {
         TF.$('orderEntry').classList.add('hidden');
@@ -1053,6 +1055,7 @@ Thank you for ordering!`
         p_rejection_reason: reason
       });
       if (result.error) throw result.error;
+      if (orderId) await safeSyncDispatch(orderId);
       TF.toast(decision === 'confirm' ? 'Payment verified and inventory updated' : 'Payment submission rejected');
       TF.$('orderDialog').close();
       await loadOrders();
@@ -1217,6 +1220,7 @@ Thank you for ordering!`
     if (!confirm(`Cancel ${activeOrder.order_number}? Reserved or committed stock will be released or returned.`)) return;
     const result = await TF.state.supa.rpc('cancel_order', { p_order_id: activeOrder.id, p_reason: reason });
     if (result.error) throw result.error;
+    await safeSyncDispatch(activeOrder.id);
     TF.toast('Order cancelled');
     TF.$('orderDialog').close();
     await loadOrders();
