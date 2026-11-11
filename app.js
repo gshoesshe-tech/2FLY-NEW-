@@ -1079,8 +1079,10 @@ Thank you for ordering!`
       if (['processing', 'delivered'].includes(desired) && !hasFulfillment(method)) throw new Error('Select J&T, Lalamove, or Walk-in / Pickup first.');
       if (desired === 'processing' && (!['paid', 'overpaid'].includes(activeOrder.payment_status) || TF.num(activeOrder.pending_payment_count) > 0)) throw new Error('Verify the full payment before starting processing.');
       if (desired === 'processing' && TF.num(activeOrder.shortage_quantity) > 0) throw new Error('This order is still short on stock.');
+      if (dispatchEnabled && desired === 'processing' && dispatchManaged(method)) throw new Error('Use Dispatch to start packing for J&T/Lalamove orders.');
       if (desired === 'delivered' && (!['paid', 'overpaid'].includes(activeOrder.payment_status) || TF.num(activeOrder.pending_payment_count) > 0)) throw new Error('Verify the full payment before marking delivered.');
       if (desired === 'delivered' && TF.num(activeOrder.shortage_quantity) > 0) throw new Error('This order is still short on stock.');
+      if (dispatchEnabled && dispatchManaged(method) && activeOrder.status !== 'shipped') throw new Error('Confirm courier handover in Dispatch first. A waybill photo alone does not mean Shipped.');
       if (desired === 'delivered' && isJnt(method) && !tracking) throw new Error('Add the J&T tracking number before marking the order delivered.');
 
       const common = {
@@ -1093,15 +1095,6 @@ Thank you for ordering!`
       };
 
       if (desired === 'delivered') {
-        if (activeOrder.status !== 'shipped') {
-          const shippedResult = await TF.state.supa.rpc('update_order_operations_v14', {
-            ...common,
-            p_status: 'shipped',
-            p_shipped_date: activeOrder.shipped_at ? String(activeOrder.shipped_at).slice(0, 10) : TF.today(),
-            p_delivered_date: null
-          });
-          if (shippedResult.error) throw shippedResult.error;
-        }
         const deliveredResult = await TF.state.supa.rpc('update_order_operations_v14', {
           ...common,
           p_status: 'delivered',
@@ -1146,11 +1139,17 @@ Thank you for ordering!`
       p_status_note: `Simple status update: ${simpleStatusLabel(simpleStatusFromRaw(status))}`
     });
     if (result.error) throw result.error;
+    await safeSyncDispatch(order.id);
     if (!quiet) TF.toast(`Order marked ${simpleStatusLabel(simpleStatusFromRaw(status))}`);
     await loadOrders();
   }
 
   async function completeOrder(order) {
+    if (dispatchEnabled && dispatchManaged(order) && order.status !== 'shipped') {
+      TF.toast('Confirm courier handover in Dispatch before marking this delivered.', true);
+      location.href = `./dispatch.html?order=${encodeURIComponent(order.id)}`;
+      return;
+    }
     if (isJnt(order) && !String(order.tracking_number || '').trim()) {
       TF.toast('Add the J&T tracking number first', true);
       await openOrder(order.id, false, true);
