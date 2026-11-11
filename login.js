@@ -9,7 +9,7 @@
       $('loginError').textContent='Open config.js and paste the URL and anon key from your NEW Supabase project.'; $('loginError').classList.remove('hidden'); return;
     }
     supa=window.supabase.createClient(cfg.SUPABASE_URL,cfg.SUPABASE_ANON_KEY);
-    const {data:{session}}=await supa.auth.getSession(); if(session){location.replace('./dashboard.html');return;}
+    const {data:{session}}=await supa.auth.getSession(); if(session){location.replace(sessionStorage.getItem('2fly.afterLogin')||'./dashboard.html');sessionStorage.removeItem('2fly.afterLogin');return;}
     $('loginForm').addEventListener('submit',async e=>{
       e.preventDefault(); const btn=e.submitter; setLoading(btn,true); $('loginError').classList.add('hidden');
       const {error}=await supa.auth.signInWithPassword({email:$('loginEmail').value.trim(),password:$('loginPassword').value});
