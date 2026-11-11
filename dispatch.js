@@ -104,7 +104,7 @@
 
   async function init(){
     await TF.ready; D=window.TwoFlyDispatch;if(!D)throw new Error('Dispatch client did not load.');
-    if(!(await D.probe(true))){TF.$('dispatchSetupNotice').textContent='Dispatch backend is not activated yet. The existing Orders website still works. Run the D1 schema and deploy the integrated Cloudflare Worker to activate this page.';TF.$('dispatchSetupNotice').classList.remove('hidden');return;}
+    if(!(await D.probe(true))){TF.$('dispatchSetupNotice').textContent='Dispatch backend check failed: '+(D.state.lastError||'Unknown backend error')+'. Existing Orders still works.';TF.$('dispatchSetupNotice').classList.remove('hidden');return;}
     await loadSourceOrders();await D.syncOrders([...sourceOrders.values()]);
     const params=new URLSearchParams(location.search);selectedId=params.get('order')||null;
     TF.$('dispatchSearch').addEventListener('input',renderTable);TF.$('dispatchStageFilter').addEventListener('change',renderTable);TF.$('dispatchSyncBtn').addEventListener('click',syncAll);TF.$('missingSearch').addEventListener('input',()=>loadMissing().catch(e=>TF.fail(e,'Missing list failed')));TF.$('missingStatus').addEventListener('change',()=>loadMissing().catch(e=>TF.fail(e,'Missing list failed')));TF.$$('[data-dispatch-tab]').forEach(b=>b.addEventListener('click',()=>switchTab(b.dataset.dispatchTab)));TF.$$('[data-stage-card]').forEach(b=>b.addEventListener('click',()=>{TF.$('dispatchStageFilter').value=b.dataset.stageCard;switchTab('queue');renderTable();}));window.addEventListener('twofly:refresh',()=>refreshAll(true).catch(e=>TF.fail(e,'Dispatch refresh failed')));
