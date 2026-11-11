@@ -40,7 +40,7 @@ Before connecting/deploying:
 1. In Cloudflare D1, open the EXISTING `2fly-dispatch-db` and copy its database ID into `wrangler.toml`.
 2. Replace `REPLACE_WITH_EXISTING_TRACKER_ORIGIN` with the exact current standalone tracker HTTPS origin.
 3. Replace `REPLACE_WITH_CURRENT_2FLY_SUPABASE_URL` with the current 2FLY Numbers Supabase URL.
-4. Keep `SUPABASE_ANON_KEY` and `VAPID_PRIVATE_KEY` as Cloudflare secrets, never in GitHub.
+4. Keep `SUPABASE_ANON_KEY` as a Cloudflare secret, never in GitHub.
 5. The `predeploy` safety check intentionally blocks deployment while critical placeholders remain.
 
 If you connect the existing Worker to GitHub in Cloudflare Workers Builds, use this same repository and set the project/root directory to `dispatch-worker`. Do not create a second Worker, D1 database, or R2 bucket.
