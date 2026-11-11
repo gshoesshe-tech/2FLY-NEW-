@@ -5,7 +5,7 @@
   if (!TF) return;
 
   const WORKER = 'https://twofly-dispatch-photos.gshoeswho.workers.dev';
-  const state = { ready: false, me: null, checked: false, checking: null, notificationTimer: null, objectUrls: new Set() };
+  const state = { ready: false, me: null, lastError: '', checked: false, checking: null, notificationTimer: null, objectUrls: new Set() };
 
   async function token() {
     await TF.ready;
@@ -43,10 +43,12 @@
       try {
         state.me = await api('/integrated/me');
         state.ready = true;
+        state.lastError = '';
       } catch (error) {
         state.ready = false;
         state.me = null;
-        console.warn('Dispatch integration not active yet:', error.message);
+        state.lastError = error?.message || String(error || 'Unknown Dispatch backend error');
+        console.warn('Dispatch integration not active yet:', state.lastError);
       }
       state.checked = true;
       state.checking = null;
