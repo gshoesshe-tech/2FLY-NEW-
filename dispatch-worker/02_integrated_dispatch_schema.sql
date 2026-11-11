@@ -27,6 +27,7 @@ CREATE TABLE IF NOT EXISTS dispatch_orders (
   shipped_by TEXT,
   shipped_name TEXT,
   shipped_at TEXT,
+  shipped_at_ph TEXT,
   updated_at TEXT NOT NULL,
   last_synced_at TEXT NOT NULL,
   version INTEGER NOT NULL DEFAULT 1
