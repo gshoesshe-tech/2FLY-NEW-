@@ -9,6 +9,8 @@ CREATE TABLE IF NOT EXISTS dispatch_orders (
   customer_name TEXT NOT NULL DEFAULT '',
   fulfillment_method TEXT NOT NULL DEFAULT '',
   source_created_at TEXT NOT NULL,
+  source_order_date TEXT NOT NULL DEFAULT '',
+  late_input_days INTEGER NOT NULL DEFAULT 0,
   source_status TEXT NOT NULL DEFAULT '',
   source_payment_status TEXT NOT NULL DEFAULT '',
   tracking TEXT NOT NULL DEFAULT '',
