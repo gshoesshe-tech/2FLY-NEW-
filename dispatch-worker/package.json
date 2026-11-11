@@ -9,6 +9,7 @@
     "wrangler": "^4.0.0"
   },
   "scripts": {
-    "deploy": "wrangler deploy"
+    "deploy": "wrangler deploy",
+    "test": "node --test tests/tracker-integrated-legacy.test.mjs tests/integrated-dispatch.test.mjs"
   }
 }
