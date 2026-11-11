@@ -300,7 +300,13 @@ export default {
     else throw err('Not found.',404);
    }
   }
- }catch(e){if(!e.status)console.error('Tracker service error',String(e));res=json({error:e.status?e.message:'Service unavailable. Check Worker logs and D1 setup.'},e.status||503);}
+ }catch(e){
+  if(!e.status)console.error('Tracker service error',String(e),e?.stack||'');
+  const safeMessage=e?.status
+    ? e.message
+    : ('Service unavailable: '+String(e?.message||e||'Unknown backend error').replace(/https?:\/\/\S+/g,'[url]').slice(0,220));
+  res=json({error:safeMessage},e.status||503);
+ }
  const h=new Headers(res.headers);h.set('Vary','Origin');h.set('X-Content-Type-Options','nosniff');if(originAllowed){h.set('Access-Control-Allow-Origin',origin);h.set('Access-Control-Allow-Methods','GET, POST, OPTIONS');h.set('Access-Control-Allow-Headers','Authorization, Content-Type');h.set('Access-Control-Max-Age','600');}return new Response(res.body,{status:res.status,headers:h});
  },
  scheduled(event,env,ctx){ctx.waitUntil(cleanup(env));}
