@@ -1,6 +1,7 @@
 name = "twofly-dispatch-photos"
 main = "worker.mjs"
 compatibility_date = "2026-11-01"
+keep_vars = true
 
 # IMPORTANT: replace only the database_id with the ID of your EXISTING
 # 2fly-dispatch-db. Do not create a second D1 database.
@@ -23,5 +24,8 @@ ALLOWED_ORIGINS = "https://2flynumbers.netlify.app"
 SUPABASE_URL = "https://yzzqhenrbzapnpsgwngu.supabase.co/"
 # Start false. Enable only after the integrated flow has been checked in production.
 CLEANUP_ENABLED = "false"
+[secrets]
+required = ["SUPABASE_ANON_KEY"]
+
 [triggers]
 crons = ["*/10 * * * *"]
