@@ -19,7 +19,7 @@ bucket_name = "2fly-dispatch-photos"
 # Keep the standalone tracker's existing Netlify origin in ALLOWED_ORIGIN.
 ALLOWED_ORIGIN = "https://2flynumbers.netlify.app"
 # Integrated 2FLY Numbers origin. Multiple origins can be comma-separated later.
-ALLOWED_ORIGINS = "https://2flynumbers.netlify.app"
+ALLOWED_ORIGINS = "https://2flynumbers.netlify.app,https://2flyfigures.netlify.app"
 # Use the current 2FLY Numbers Supabase URL. Do not commit the anon key here.
 SUPABASE_URL = "https://yzzqhenrbzapnpsgwngu.supabase.co/"
 # Start false. Enable only after the integrated flow has been checked in production.
