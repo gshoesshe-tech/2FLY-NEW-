@@ -44,7 +44,7 @@
   }
 
   function dispatchEligibleSource(order) {
-    return dispatchManaged(order) && ['paid', 'overpaid'].includes(String(order?.payment_status || '').toLowerCase()) &&
+    return dispatchManaged(order) &&
       !['cancelled', 'refunded', 'shipped', 'delivered'].includes(String(order?.status || '').toLowerCase());
   }
 
