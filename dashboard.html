@@ -27,7 +27,7 @@
       <article class="card dashboard-filter-card">
         <div class="card-body dashboard-filter-grid">
           <label>Date basis<select id="dashboardDateBasis"><option value="order">Order Date</option><option value="payment">Payment Date</option><option value="shipped">Shipped Date</option><option value="delivered">Delivered Date</option></select></label>
-          <label>Date range<select id="dashboardPreset"><option value="today">Today</option><option value="yesterday">Yesterday</option><option value="last7" selected>Last 7 Days</option><option value="this_week">This Week</option><option value="this_month">This Month</option><option value="all">All Dates</option><option value="custom">Custom Range</option></select></label>
+          <label>Date range<select id="dashboardPreset"><option value="today">Today</option><option value="yesterday">Yesterday</option><option value="last7" selected>Last 7 Days</option><option value="last30">Last 30 Days</option><option value="last90">Last 90 Days</option><option value="this_week">This Week</option><option value="this_month">This Month</option><option value="all">All Dates</option><option value="custom">Custom Range</option></select></label>
           <label>Status<select id="dashboardStatus"><option value="all">All Statuses</option><option value="pending">Pending</option><option value="processing">Processing</option><option value="shipped">Shipped</option><option value="delivered">Delivered</option><option value="cancelled">Cancelled / Refunded</option></select></label>
           <label id="dashboardStartWrap" class="hidden">Start date<input id="dashboardStart" type="date"></label>
           <label id="dashboardEndWrap" class="hidden">End date<input id="dashboardEnd" type="date"></label>
@@ -35,6 +35,7 @@
           <span id="dashboardBasisNote" class="filter-note">Based on Order Date</span>
         </div>
       </article>
+      <div id="dashboardDataCoverage" class="dashboard-coverage"><strong>Data coverage:</strong> Loading complete history…</div>
 
       <section class="kpi-grid six dashboard-number-grid">
         <article class="kpi number-card cash"><span>Cash Collected</span><strong id="kpiCash">₱0</strong><small>Verified payments</small></article>
