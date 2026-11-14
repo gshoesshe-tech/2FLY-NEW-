@@ -13,8 +13,6 @@
   let lastExpected = 0;
   let paymentDatesByOrder = new Map();
   let orderItemsByOrder = new Map();
-  let dispatchEnabled = false;
-  let dispatchByOrder = new Map();
   const selectedOrderIds = new Set();
   const SAVED_FILTERS_KEY = '2fly.dailyOps.orderFilters.v1';
 
@@ -36,46 +34,6 @@
   function hasFulfillment(value) {
     const method = typeof value === 'string' ? value : value?.fulfillment_method;
     return ['jnt', 'lalamove', 'walk_in'].includes(String(method || '').toLowerCase());
-  }
-
-  function dispatchManaged(value) {
-    const method = typeof value === 'string' ? value : value?.fulfillment_method;
-    return ['jnt', 'lalamove'].includes(String(method || '').toLowerCase());
-  }
-
-  function dispatchEligibleSource(order) {
-    return dispatchManaged(order) &&
-      !['cancelled', 'refunded', 'shipped', 'delivered'].includes(String(order?.status || '').toLowerCase());
-  }
-
-  async function refreshDispatchState() {
-    dispatchEnabled = false; dispatchByOrder = new Map();
-    const D = window.TwoFlyDispatch; if (!D) return;
-    try {
-      if (!(await D.probe())) return;
-      dispatchEnabled = true;
-      let current = await D.list({ limit: 500 });
-      const existingIds = new Set(current.map(row => row.order_id));
-      const syncRows = orders.filter(order => dispatchEligibleSource(order) || existingIds.has(order.id));
-      if (syncRows.length) await D.syncOrders(syncRows);
-      current = await D.list({ limit: 500 });
-      dispatchByOrder = new Map(current.map(row => [row.order_id, row]));
-    } catch (error) { dispatchEnabled = false; console.warn('Dispatch status unavailable; existing Orders flow remains available.', error); }
-  }
-
-  async function safeSyncDispatch(orderId) {
-    const D = window.TwoFlyDispatch; if (!D || !orderId) return;
-    try { if (await D.probe()) await D.syncOrderById(orderId); }
-    catch (error) { console.warn('Dispatch sync failed without blocking Orders.', error); }
-  }
-
-  function dispatchStatusCell(order) {
-    if (!dispatchEnabled) return '<span class="muted">Not active</span>';
-    const row = dispatchByOrder.get(order.id);
-    if (!row) return dispatchEligibleSource(order) ? '<span class="muted">Not queued</span>' : '<span class="muted">—</span>';
-    const staff = row.stage === 'packing' && row.claimed_name ? '<small>Packing — ' + TF.esc(row.claimed_name) + '</small>' : '';
-    const issues = TF.num(row.open_issue_count) > 0 ? '<small>' + TF.num(row.open_issue_count) + ' open missing-item issue(s)</small>' : '';
-    return (window.TwoFlyDispatch?.stagePill(row.stage) || TF.esc(row.stage)) + staff + issues;
   }
 
   function fulfillmentText(value) {
@@ -366,9 +324,47 @@
     lastExpected = expected;
   }
 
+  async function compressPaymentProof(file) {
+    if (!file || file.type === 'application/pdf' || !String(file.type || '').startsWith('image/')) return file;
+    if (file.size <= 450000 || !('createImageBitmap' in window)) return file;
+    let bitmap;
+    try {
+      bitmap = await createImageBitmap(file, { imageOrientation: 'from-image' });
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return file;
+      let best = null;
+      for (const longest of [1800, 1600, 1400, 1200]) {
+        const scale = Math.min(1, longest / Math.max(bitmap.width, bitmap.height));
+        canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+        canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+        ctx.fillStyle = '#fff';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+        for (const quality of [0.84, 0.76, 0.68]) {
+          const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', quality));
+          if (!blob) continue;
+          if (!best || blob.size < best.size) best = blob;
+          if (blob.size <= 450000) break;
+        }
+        if (best && best.size <= 450000) break;
+      }
+      if (!best || best.size >= file.size) return file;
+      const base = file.name.replace(/\.[^.]+$/, '') || 'payment-proof';
+      return new File([best], `${base}.jpg`, { type: 'image/jpeg', lastModified: Date.now() });
+    } catch (error) {
+      console.warn('Payment proof compression skipped:', error);
+      return file;
+    } finally {
+      if (bitmap?.close) bitmap.close();
+    }
+  }
+
   async function uploadProof(input) {
-    const file = input.files?.[0];
-    if (!file) return '';
+    const original = input.files?.[0];
+    if (!original) return '';
+    const file = await compressPaymentProof(original);
+    if (file.size > 8 * 1024 * 1024) throw new Error('Payment proof is too large. Use a screenshot or file below 8 MB.');
     const safe = file.name.replace(/[^a-zA-Z0-9._-]/g, '-');
     const path = `${TF.state.session.user.id}/${TF.today()}/${crypto.randomUUID()}-${safe}`;
     const result = await TF.state.supa.storage.from('payment-proofs').upload(path, file, {
@@ -472,7 +468,6 @@
       TF.toast(submitPayment ? 'Order saved and payment sent for verification' : 'Order saved as Awaiting Payment');
       const savedOrderId = result.data?.order_id || '';
       const savedOrderNumber = result.data?.order_number || '';
-      await safeSyncDispatch(savedOrderId);
       resetForm();
       if (has('orderSaveSuccess')) {
         TF.$('orderEntry').classList.add('hidden');
@@ -589,9 +584,8 @@
         p_actual_courier_cost: TF.$('courierCost').value.trim() === '' ? null : TF.num(TF.$('courierCost').value)
       });
       if (shippingResult.error) throw shippingResult.error;
-      const savedId = editingOrderId;
-      await safeSyncDispatch(savedId);
       TF.toast('Order changes saved');
+      const savedId = editingOrderId;
       resetForm();
       if (has('orderSaveSuccess')) {
         TF.$('orderEntry').classList.add('hidden');
@@ -759,8 +753,7 @@
     if (order.facebook_profile) actions.push(`<a href="${TF.esc(facebookUrl(order.facebook_profile))}" target="_blank" rel="noopener noreferrer">Open Facebook</a>`);
     if (TF.num(order.pending_payment_count) > 0 && TF.can('confirm_payments')) actions.push(`<button type="button" data-action="pay" data-id="${order.id}">Review Payment</button>`);
     if (!TF.num(order.pending_payment_count) && (TF.can('create_orders') || TF.can('edit_orders')) && ['unpaid', 'partial'].includes(order.payment_status) && !['cancelled', 'refunded'].includes(order.status)) actions.push(`<button type="button" data-action="pay" data-id="${order.id}">Submit Payment</button>`);
-    if (dispatchEnabled && dispatchManaged(order) && ['paid', 'overpaid'].includes(order.payment_status) && TF.num(order.shortage_quantity) <= 0 && !['shipped','delivered'].includes(order.status)) actions.push(`<button type="button" data-action="dispatch" data-id="${order.id}">Open Dispatch</button>`);
-    else if (TF.can('update_tracking') && simpleStatus(order) === 'pending' && hasFulfillment(order) && ['paid', 'overpaid'].includes(order.payment_status) && TF.num(order.shortage_quantity) <= 0) actions.push(`<button type="button" data-action="processing" data-id="${order.id}">Start Processing</button>`);
+    if (TF.can('update_tracking') && simpleStatus(order) === 'pending' && hasFulfillment(order) && ['paid', 'overpaid'].includes(order.payment_status) && TF.num(order.shortage_quantity) <= 0) actions.push(`<button type="button" data-action="processing" data-id="${order.id}">Start Processing</button>`);
     if (TF.can('update_tracking') && simpleStatus(order) === 'processing') {
       if (isJnt(order) && !order.tracking_number) actions.push(`<button type="button" data-action="openTracking" data-id="${order.id}">Add J&T Tracking</button>`);
       else actions.push(`<button type="button" data-action="complete" data-id="${order.id}">Mark Delivered</button>`);
@@ -774,7 +767,6 @@
     if (simpleStatus(order) === 'delivered') return `<span class="action-state completed">Completed</span>`;
     if (TF.num(order.pending_payment_count) > 0) return `<button class="btn primary small" data-action="pay" data-id="${order.id}">Review Payment</button>`;
     if ((TF.can('create_orders') || TF.can('edit_orders')) && ['unpaid', 'partial'].includes(order.payment_status)) return `<button class="btn primary small" data-action="pay" data-id="${order.id}">Submit Payment</button>`;
-    if (dispatchEnabled && dispatchManaged(order) && ['paid', 'overpaid'].includes(order.payment_status) && TF.num(order.shortage_quantity) <= 0 && !['shipped','delivered'].includes(order.status)) return `<button class="btn primary small" data-action="dispatch" data-id="${order.id}">Open Dispatch</button>`;
     if (!TF.can('update_tracking')) return `<button class="btn small order-view-btn" data-action="view" data-id="${order.id}">View</button>`;
     if (simpleStatus(order) === 'pending') {
       if (!hasFulfillment(order)) return `<button class="btn primary small" data-action="view" data-id="${order.id}">Set Fulfillment</button>`;
@@ -815,11 +807,11 @@
     TF.$('ordersTable').innerHTML = `
       <table class="orders-clean-table simple-orders-table">
         <colgroup>
-          <col class="col-select"><col class="col-order"><col class="col-customer"><col class="col-fulfillment"><col class="col-status"><col class="col-status"><col class="col-payment"><col class="col-items"><col class="col-total"><col class="col-tracking"><col class="col-date"><col class="col-actions">
+          <col class="col-select"><col class="col-order"><col class="col-customer"><col class="col-fulfillment"><col class="col-status"><col class="col-payment"><col class="col-items"><col class="col-total"><col class="col-tracking"><col class="col-date"><col class="col-actions">
         </colgroup>
         <thead><tr>
           <th><input id="selectAllOrders" type="checkbox" aria-label="Select all visible orders" ${rows.length && rows.every((row) => selectedOrderIds.has(row.id)) ? 'checked' : ''}></th>
-          <th>Order</th><th>Customer</th><th>Fulfillment</th><th>Status</th><th>Dispatch</th><th>Payment</th><th>Items</th><th>Total</th><th>Tracking</th><th>Date</th><th>Action</th>
+          <th>Order</th><th>Customer</th><th>Fulfillment</th><th>Status</th><th>Payment</th><th>Items</th><th>Total</th><th>Tracking</th><th>Date</th><th>Action</th>
         </tr></thead>
         <tbody>${rows.map((order) => {
           const alert = order.paid_not_shipped_alert || needsTracking(order);
@@ -830,7 +822,6 @@
             <td data-label="Customer"><strong class="customer-name-text">${TF.esc(order.customer_name)}</strong><div class="customer-subline"><span>${TF.esc(order.phone || 'No phone')}</span>${order.facebook_profile ? `<a class="facebook-mini-link" href="${TF.esc(facebookUrl(order.facebook_profile))}" target="_blank" rel="noopener noreferrer" title="Open Facebook profile">f</a>` : ''}</div></td>
             <td data-label="Fulfillment">${fulfillmentBadge(order)}</td>
             <td data-label="Status">${simpleStatusPill(order)}</td>
-            <td data-label="Dispatch">${dispatchStatusCell(order)}</td>
             <td data-label="Payment">${TF.num(order.pending_payment_count) > 0
               ? `<span class="payment-state is-submitted">For Verification</span><small>${TF.esc(order.latest_submission_account_name || 'Submitted account')}</small>`
               : `<span class="payment-state ${paid ? 'is-paid' : order.payment_status === 'partial' ? 'is-partial' : 'is-unpaid'}">${TF.esc(TF.statusLabel(order.payment_status))}</span><small>${TF.esc(order.latest_payment_account_name || 'No account')}</small>`}</td>
@@ -840,7 +831,7 @@
             <td data-label="Date"><strong>${TF.formatDate(order.order_date)}</strong><small>${TF.esc(orderAge(order))}</small></td>
             <td data-label="Action">${orderActions(order)}</td>
           </tr>`;
-        }).join('') || '<tr><td colspan="12" class="empty">No orders found.</td></tr>'}</tbody>
+        }).join('') || '<tr><td colspan="11" class="empty">No orders found.</td></tr>'}</tbody>
       </table>`;
     updateBulkBar();
   }
@@ -858,7 +849,6 @@
     ]);
     if (ordersResult.error || paymentsResult.error || itemsResult.error) throw ordersResult.error || paymentsResult.error || itemsResult.error;
     orders = ordersResult.data || [];
-    await refreshDispatchState();
     orderItemsByOrder = new Map();
     (itemsResult.data || []).forEach((item) => {
       const current = orderItemsByOrder.get(item.order_id) || [];
@@ -996,8 +986,6 @@ Thank you for ordering!`
     TF.$('customerUpdatePreview').textContent = customerUpdate(order);
     TF.$('activityList').innerHTML = (activityResult.data || []).map((activity) => `<div class="timeline-item"><span></span><div><strong>${TF.esc(activity.action.replaceAll('_', ' '))}</strong><small>${TF.formatDateTime(activity.created_at)} • ${TF.esc(activity.full_name || activity.email || 'System')}</small>${activity.old_status !== activity.new_status && simpleStatusFromRaw(activity.old_status) !== simpleStatusFromRaw(activity.new_status) ? `<p>${simpleStatusLabel(simpleStatusFromRaw(activity.old_status))} → ${simpleStatusLabel(simpleStatusFromRaw(activity.new_status))}</p>` : ''}</div></div>`).join('') || '<div class="empty">No activity history yet.</div>';
     TF.$('detailRaw').textContent = order.raw_order_form || 'No original form saved.';
-    if (has('openDispatchOrderBtn')) TF.$('openDispatchOrderBtn').href = `./dispatch.html?order=${encodeURIComponent(order.id)}`;
-    if (has('orderDispatchPanel') && window.TwoFlyDispatch) { await safeSyncDispatch(order.id); await window.TwoFlyDispatch.renderOrderPanel(order.id, TF.$('orderDispatchPanel')); }
     TF.$('editOrderBtn').classList.toggle('hidden', !TF.can('edit_orders') || ['packing', 'ready_to_ship', 'shipped', 'delivered', 'cancelled', 'refunded'].includes(order.status));
     TF.$('cancelOrderBtn').classList.toggle('hidden', !TF.isManagement() || ['cancelled', 'refunded', 'delivered'].includes(order.status));
     TF.$('orderDialog').showModal();
@@ -1061,7 +1049,6 @@ Thank you for ordering!`
         p_rejection_reason: reason
       });
       if (result.error) throw result.error;
-      if (orderId) await safeSyncDispatch(orderId);
       TF.toast(decision === 'confirm' ? 'Payment verified and inventory updated' : 'Payment submission rejected');
       TF.$('orderDialog').close();
       await loadOrders();
@@ -1085,10 +1072,8 @@ Thank you for ordering!`
       if (['processing', 'delivered'].includes(desired) && !hasFulfillment(method)) throw new Error('Select J&T, Lalamove, or Walk-in / Pickup first.');
       if (desired === 'processing' && (!['paid', 'overpaid'].includes(activeOrder.payment_status) || TF.num(activeOrder.pending_payment_count) > 0)) throw new Error('Verify the full payment before starting processing.');
       if (desired === 'processing' && TF.num(activeOrder.shortage_quantity) > 0) throw new Error('This order is still short on stock.');
-      if (dispatchEnabled && desired === 'processing' && dispatchManaged(method)) throw new Error('Use Dispatch to start packing for J&T/Lalamove orders.');
       if (desired === 'delivered' && (!['paid', 'overpaid'].includes(activeOrder.payment_status) || TF.num(activeOrder.pending_payment_count) > 0)) throw new Error('Verify the full payment before marking delivered.');
       if (desired === 'delivered' && TF.num(activeOrder.shortage_quantity) > 0) throw new Error('This order is still short on stock.');
-      if (dispatchEnabled && dispatchManaged(method) && activeOrder.status !== 'shipped') throw new Error('Confirm courier handover in Dispatch first. A waybill photo alone does not mean Shipped.');
       if (desired === 'delivered' && isJnt(method) && !tracking) throw new Error('Add the J&T tracking number before marking the order delivered.');
 
       const common = {
@@ -1101,6 +1086,15 @@ Thank you for ordering!`
       };
 
       if (desired === 'delivered') {
+        if (activeOrder.status !== 'shipped') {
+          const shippedResult = await TF.state.supa.rpc('update_order_operations_v14', {
+            ...common,
+            p_status: 'shipped',
+            p_shipped_date: activeOrder.shipped_at ? String(activeOrder.shipped_at).slice(0, 10) : TF.today(),
+            p_delivered_date: null
+          });
+          if (shippedResult.error) throw shippedResult.error;
+        }
         const deliveredResult = await TF.state.supa.rpc('update_order_operations_v14', {
           ...common,
           p_status: 'delivered',
@@ -1133,7 +1127,6 @@ Thank you for ordering!`
   }
 
   async function quickStatus(order, status, quiet = false) {
-    if (dispatchEnabled && dispatchManaged(order) && status === 'shipped') throw new Error('Confirm courier handover in Dispatch first.');
     const result = await TF.state.supa.rpc('update_order_operations_v14', {
       p_order_id: order.id,
       p_status: status,
@@ -1146,17 +1139,11 @@ Thank you for ordering!`
       p_status_note: `Simple status update: ${simpleStatusLabel(simpleStatusFromRaw(status))}`
     });
     if (result.error) throw result.error;
-    await safeSyncDispatch(order.id);
     if (!quiet) TF.toast(`Order marked ${simpleStatusLabel(simpleStatusFromRaw(status))}`);
     await loadOrders();
   }
 
   async function completeOrder(order) {
-    if (dispatchEnabled && dispatchManaged(order) && order.status !== 'shipped') {
-      TF.toast('Confirm courier handover in Dispatch before marking this delivered.', true);
-      location.href = `./dispatch.html?order=${encodeURIComponent(order.id)}`;
-      return;
-    }
     if (isJnt(order) && !String(order.tracking_number || '').trim()) {
       TF.toast('Add the J&T tracking number first', true);
       await openOrder(order.id, false, true);
@@ -1192,9 +1179,7 @@ Thank you for ordering!`
       try {
         if (button.dataset.action === 'view') await openOrder(order.id);
         if (button.dataset.action === 'pay') await openOrder(order.id, true, false);
-        if (button.dataset.action === 'dispatch') { location.href = `./dispatch.html?order=${encodeURIComponent(order.id)}`; return; }
         if (button.dataset.action === 'processing') {
-          if (dispatchEnabled && dispatchManaged(order)) { location.href = `./dispatch.html?order=${encodeURIComponent(order.id)}`; return; }
           if (!hasFulfillment(order)) TF.toast('Set the fulfillment method first', true);
           else if (!['paid', 'overpaid'].includes(order.payment_status) || TF.num(order.pending_payment_count) > 0) TF.toast('Verify the full payment first', true);
           else if (TF.num(order.shortage_quantity) > 0) TF.toast('This order is still short on stock', true);
@@ -1202,7 +1187,6 @@ Thank you for ordering!`
         }
         if (button.dataset.action === 'openTracking') await openOrder(order.id, false, true);
         if (button.dataset.action === 'shipped') {
-          if (dispatchEnabled && dispatchManaged(order)) { location.href = `./dispatch.html?order=${encodeURIComponent(order.id)}`; return; }
           if (isJnt(order) && !order.tracking_number) {
             TF.toast('Add the J&T tracking number first', true);
             await openOrder(order.id, false, true);
@@ -1229,7 +1213,6 @@ Thank you for ordering!`
     if (!confirm(`Cancel ${activeOrder.order_number}? Reserved or committed stock will be released or returned.`)) return;
     const result = await TF.state.supa.rpc('cancel_order', { p_order_id: activeOrder.id, p_reason: reason });
     if (result.error) throw result.error;
-    await safeSyncDispatch(activeOrder.id);
     TF.toast('Order cancelled');
     TF.$('orderDialog').close();
     await loadOrders();
@@ -1262,13 +1245,11 @@ Thank you for ordering!`
       for (let order of selected) {
         try {
           if (action === 'processing') {
-            if (dispatchEnabled && dispatchManaged(order)) throw new Error('use Dispatch for J&T/Lalamove packing');
             if (!hasFulfillment(order)) throw new Error('fulfillment is not selected');
             if (!['paid', 'overpaid'].includes(order.payment_status) || TF.num(order.pending_payment_count) > 0) throw new Error('payment is not fully verified');
             if (TF.num(order.shortage_quantity) > 0) throw new Error('stock is short');
             await quickStatus(order, 'packing');
           } else if (action === 'delivered') {
-            if (dispatchEnabled && dispatchManaged(order) && order.status !== 'shipped') throw new Error('confirm courier handover in Dispatch first');
             if (simpleStatus(order) !== 'processing') throw new Error('start processing first');
             if (isJnt(order) && !order.tracking_number) throw new Error('J&T tracking is missing');
             if (order.status !== 'shipped') await quickStatus(order, 'shipped', true);
