@@ -44,6 +44,8 @@
     if (preset === 'today') return { start: current, end: current };
     if (preset === 'yesterday') { const day = addDays(current, -1); return { start: day, end: day }; }
     if (preset === 'last7') return { start: addDays(current, -6), end: current };
+    if (preset === 'last30') return { start: addDays(current, -29), end: current };
+    if (preset === 'last90') return { start: addDays(current, -89), end: current };
     if (preset === 'this_week') {
       const mondayOffset = (date.getDay() + 6) % 7;
       return { start: addDays(current, -mondayOffset), end: current };
@@ -211,7 +213,7 @@
       ['product-sales', './product-sales.html', 'Product Sales', can('view_daily_summary') || isManagement()],
       ['new-order', './new-order.html', 'New Order', can('create_orders')],
       ['orders', './orderpage.html', 'Orders', can('create_orders') || can('edit_orders') || can('confirm_payments')],
-      ['dispatch', './dispatch.html', 'Dispatch', can('edit_orders') || can('update_tracking') || isManagement()],
+      ['packing', './packing.html', 'Packing Queue', can('edit_orders') || isManagement()],
       ['waybill', './waybill.html', 'Waybill', can('update_tracking') || can('edit_orders') || isManagement()],
       ['todo', './todo.html', 'To Do', true],
       ['tracking', './tracking.html', 'Tracking & Updates', can('update_tracking') || isManagement()],
@@ -338,12 +340,4 @@
     isOwner, can, statusLabel, statusPill, accountOptions, categoryOptions,
     copyText, ready: init()
   };
-
-  window.__2FLY_DISPATCH_CLIENT_LOADING__ = true;
-  if (!document.querySelector('script[src*="dispatch-client.js"]')) {
-    const dispatchScript = document.createElement('script');
-    dispatchScript.src = './dispatch-client.js?v=20261112-0345';
-    dispatchScript.defer = true;
-    document.head.appendChild(dispatchScript);
-  }
 })();
