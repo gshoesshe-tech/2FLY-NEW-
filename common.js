@@ -151,7 +151,7 @@
     payment_review: 'Payment Review',
     confirmed: 'Paid',
     waiting_stock: 'Waiting for Stock',
-    ready_to_pack: 'Paid / Ready to Pack',
+    ready_to_pack: 'Needs Packing',
     packing: 'Packing',
     ready_to_ship: 'Ready to Ship',
     shipped: 'Shipped',
@@ -213,7 +213,7 @@
       ['product-sales', './product-sales.html', 'Product Sales', can('view_daily_summary') || isManagement()],
       ['new-order', './new-order.html', 'New Order', can('create_orders')],
       ['orders', './orderpage.html', 'Orders', can('create_orders') || can('edit_orders') || can('confirm_payments')],
-      ['packing', './packing.html', 'Packing Queue', can('edit_orders') || isManagement()],
+      ['packing', './packing.html', 'Packing Queue <span class="nav-count" data-packing-nav-count>0</span>', can('edit_orders') || isManagement()],
       ['waybill', './waybill.html', 'Waybill', can('update_tracking') || can('edit_orders') || isManagement()],
       ['todo', './todo.html', 'To Do', true],
       ['tracking', './tracking.html', 'Tracking & Updates', can('update_tracking') || isManagement()],
@@ -225,6 +225,39 @@
       .filter(([, , , visible]) => visible)
       .map(([key, href, label]) => `<a href="${href}" data-nav="${key}" class="nav-btn">${label}</a>`)
       .join('');
+  }
+
+  async function refreshPackingNavCount() {
+    const badge = document.querySelector('[data-packing-nav-count]');
+    if (!badge || !(can('edit_orders') || isManagement())) return;
+    try {
+      const result = await state.supa
+        .from('v_daily_ops_orders_v16')
+        .select('id', { count: 'exact', head: true })
+        .in('status', ['confirmed', 'ready_to_pack', 'packing']);
+      if (result.error) throw result.error;
+      badge.textContent = Number(result.count || 0).toLocaleString();
+      badge.title = `${Number(result.count || 0).toLocaleString()} order(s) in the packing workflow`;
+    } catch (error) {
+      console.warn('Packing Queue count unavailable:', error);
+      badge.textContent = '•';
+    }
+  }
+
+  async function cleanupLegacyDispatchWorker() {
+    if (!('serviceWorker' in navigator)) return;
+    try {
+      const registrations = await navigator.serviceWorker.getRegistrations();
+      for (const registration of registrations) {
+        const script = registration.active?.scriptURL || registration.waiting?.scriptURL || registration.installing?.scriptURL || '';
+        if (!script.endsWith('/dispatch-sw.js')) continue;
+        const subscription = await registration.pushManager?.getSubscription?.();
+        if (subscription) await subscription.unsubscribe().catch(() => {});
+        await registration.unregister();
+      }
+    } catch (error) {
+      console.warn('Legacy Dispatch service worker cleanup skipped:', error);
+    }
   }
 
   function applyPermissionVisibility() {
@@ -331,6 +364,8 @@
     await loadBaseData();
     if (!enforcePageAccess()) return state;
     initShell();
+    refreshPackingNavCount();
+    cleanupLegacyDispatchWorker();
     return state;
   }
 
