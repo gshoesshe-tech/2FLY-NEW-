@@ -54,8 +54,6 @@
     const tasks = [];
     if (TF.num(order.pending_payment_count) > 0 && !['cancelled', 'refunded'].includes(order.status)) tasks.push('verification');
     else if (['unpaid', 'partial'].includes(order.payment_status) && !['cancelled', 'refunded'].includes(order.status)) tasks.push('payment');
-    if (['confirmed', 'ready_to_pack'].includes(order.status)) tasks.push('needs_packing');
-    if (order.status === 'packing') tasks.push('packing');
     if (order.status === 'waiting_stock') tasks.push('waiting_stock');
     if (order.status === 'ready_to_ship') tasks.push('ready_to_ship');
     if (needsTracking(order)) tasks.push('missing_tracking');
@@ -67,14 +65,13 @@
   function taskTeam(task) {
     if (['payment', 'waiting_stock', 'customer_update'].includes(task)) return 'customer_service';
     if (task === 'verification') return 'owner';
-    if (['needs_packing', 'packing'].includes(task)) return 'packing';
     if (['ready_to_ship', 'missing_tracking'].includes(task)) return 'shipping';
     return 'owner';
   }
 
   function primaryTask(order) {
     const tasks = orderTasks(order);
-    const priority = ['verification', 'missing_tracking', 'waiting_stock', 'overdue', 'ready_to_ship', 'packing', 'needs_packing', 'payment', 'customer_update'];
+    const priority = ['verification', 'missing_tracking', 'waiting_stock', 'overdue', 'ready_to_ship', 'payment', 'customer_update'];
     return priority.find((task) => tasks.includes(task)) || '';
   }
 
@@ -82,8 +79,6 @@
     const labels = {
       verification: `Verify Payment • ${TF.money(order.pending_payment_amount)}`,
       payment: 'Payment Not Submitted',
-      needs_packing: 'Start Packing',
-      packing: 'Finish Packing',
       waiting_stock: TF.num(order.shortage_quantity) > 0 ? `Waiting for Stock • ${TF.num(order.shortage_quantity)} short` : 'Stock Available Now',
       ready_to_ship: isJnt(order) && !order.tracking_number ? 'Add J&T Tracking' : 'Ready to Ship',
       missing_tracking: 'Add Missing J&T Tracking',
@@ -96,7 +91,7 @@
   function taskTone(task) {
     if (['missing_tracking', 'overdue'].includes(task)) return 'danger';
     if (['waiting_stock', 'payment', 'verification'].includes(task)) return 'warn';
-    if (['ready_to_ship', 'needs_packing', 'packing'].includes(task)) return 'info';
+    if (task === 'ready_to_ship') return 'info';
     return '';
   }
 
@@ -117,8 +112,8 @@
     let base = order.order_date;
     let prefix = 'Ordered';
     if (task === 'verification' && order.latest_submission_at) { base = TF.isoDate(order.latest_submission_at); prefix = 'Submitted'; }
-    if (['needs_packing', 'overdue'].includes(task) && order.latest_payment_date) { base = order.latest_payment_date; prefix = 'Paid'; }
-    if (['packing', 'waiting_stock', 'ready_to_ship', 'missing_tracking'].includes(task)) { base = TF.isoDate(order.last_status_at || order.updated_at); prefix = 'Waiting'; }
+    if (task === 'overdue' && order.latest_payment_date) { base = order.latest_payment_date; prefix = 'Paid'; }
+    if (['waiting_stock', 'ready_to_ship', 'missing_tracking'].includes(task)) { base = TF.isoDate(order.last_status_at || order.updated_at); prefix = 'Waiting'; }
     const days = TF.daysBetween(base);
     if (!base) return 'No date';
     if (days === 0) return `${prefix} today`;
@@ -158,7 +153,7 @@ Thank you!` : `Hi! Released na po ang order ${order.order_number} through ${meth
       return true;
     });
     const sort = TF.$('todoSort').value;
-    const priorityIndex = { verification: 0, missing_tracking: 1, waiting_stock: 2, overdue: 3, ready_to_ship: 4, packing: 5, needs_packing: 6, payment: 7, customer_update: 8 };
+    const priorityIndex = { verification: 0, missing_tracking: 1, waiting_stock: 2, overdue: 3, ready_to_ship: 4, payment: 5, customer_update: 6 };
     rows.sort((a, b) => {
       if (sort === 'oldest') return String(relevantDate(a) || '').localeCompare(String(relevantDate(b) || ''));
       if (sort === 'newest') return String(relevantDate(b) || '').localeCompare(String(relevantDate(a) || ''));
@@ -172,7 +167,6 @@ Thank you!` : `Hi! Released na po ang order ${order.order_number} through ${meth
     const count = (task) => orders.filter((order) => orderTasks(order).includes(task)).length;
     TF.$('todoVerificationCount').textContent = count('verification');
     TF.$('todoPaymentCount').textContent = count('payment');
-    TF.$('todoPackingCount').textContent = count('needs_packing') + count('packing');
     TF.$('todoStockCount').textContent = count('waiting_stock');
     TF.$('todoReadyCount').textContent = count('ready_to_ship');
     TF.$('todoTrackingCount').textContent = count('missing_tracking');
@@ -185,7 +179,7 @@ Thank you!` : `Hi! Released na po ang order ${order.order_number} through ${meth
     if (task === 'verification' && TF.can('confirm_payments')) buttons.unshift(`<a class="btn primary small" href="./orderpage.html?open=${order.id}&focus=payment">Review Payment</a>`);
     else if (task === 'payment' && (TF.can('create_orders') || TF.can('edit_orders'))) buttons.unshift(`<a class="btn primary small" href="./orderpage.html?open=${order.id}&focus=payment">Submit Payment</a>`);
     else if (simpleStatus(order) === 'pending' && !hasFulfillment(order)) buttons.unshift(`<a class="btn primary small" href="./orderpage.html?open=${order.id}">Set Fulfillment</a>`);
-    else if (simpleStatus(order) === 'pending' && hasFulfillment(order) && ['paid', 'overpaid'].includes(order.payment_status) && TF.num(order.shortage_quantity) <= 0 && TF.can('update_tracking')) buttons.unshift(`<button class="btn primary small" data-action="processing" data-id="${order.id}">Start Processing</button>`);
+    else if (['confirmed', 'ready_to_pack', 'packing'].includes(order.status)) buttons.unshift(`<a class="btn primary small" href="./packing.html">Open Packing Queue</a>`);
     else if (simpleStatus(order) === 'processing' && TF.can('update_tracking')) {
       if (isJnt(order) && !order.tracking_number) buttons.unshift(`<a class="btn primary small" href="./orderpage.html?open=${order.id}&focus=tracking">Add J&T Tracking</a>`);
       else buttons.unshift(`<button class="btn primary small" data-action="complete" data-id="${order.id}">Mark Delivered</button>`);
@@ -245,7 +239,6 @@ Thank you!` : `Hi! Released na po ang order ${order.order_number} through ${meth
     const order = orders.find((row) => row.id === button.dataset.id);
     if (!order) return;
     try {
-      if (button.dataset.action === 'processing') await updateStatus(order, 'packing');
       if (button.dataset.action === 'complete') await completeOrder(order);
       if (button.dataset.action === 'copyUpdate') await TF.copyText(customerUpdate(order), 'Customer update copied');
     } catch (error) {
