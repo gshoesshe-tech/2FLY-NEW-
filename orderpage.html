@@ -20,7 +20,7 @@
 <div class="side-user"><span id="userEmail">—</span><strong id="userRole">—</strong><button class="btn ghost" id="logoutBtn">Log out</button></div>
 </aside>
 <section class="workspace">
-<header class="topbar"><div><h2>Orders</h2><p>Search, filter, and update customer orders.</p></div><div class="top-actions"><a class="btn primary perm-create-orders" href="./new-order.html" id="newOrderBtn">New Order</a><button class="btn" id="refreshBtn">Refresh</button></div></header>
+<header class="topbar"><div><h2>Orders</h2><p>Search, filter, and update customer orders.</p></div><div class="top-actions"><a class="btn perm-edit-orders" href="./packing.html">Packing Queue</a><a class="btn primary perm-create-orders" href="./new-order.html" id="newOrderBtn">New Order</a><button class="btn" id="refreshBtn">Refresh</button></div></header>
 <main class="page"><div class="page-guide compact-guide"><strong>Orders = records.</strong> See the current status, use the next-action button, or open the order for complete details.</div>
 
 <article class="card">
@@ -48,7 +48,7 @@
 </div>
 <div class="bulk-order-bar hidden" id="bulkOrderBar">
 <strong id="bulkSelectedCount">0 selected</strong>
-<select id="bulkOrderAction"><option value="">Choose bulk action</option><option value="processing">Start Processing</option><option value="delivered">Mark Delivered</option><option value="set_courier">Set Fulfillment</option></select>
+<select id="bulkOrderAction"><option value="">Choose bulk action</option><option value="delivered">Mark Delivered</option><option value="set_courier">Set Fulfillment</option></select>
 <select id="bulkCourier"><option value="jnt">J&amp;T</option><option value="lalamove">Lalamove</option><option value="walk_in">Walk-in / Pickup</option></select>
 <button class="btn primary" id="applyBulkOrderAction">Apply</button>
 <button class="btn" id="clearBulkSelection">Clear Selection</button>
