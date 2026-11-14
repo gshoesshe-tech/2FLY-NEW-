@@ -1,0 +1,4 @@
+# 2FLY Daily Ops is a static site served directly from the repository root.
+# Keeping this explicit prevents Netlify from publishing an older/subdirectory build output.
+[build]
+  publish = "."
