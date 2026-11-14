@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Packing Queue | 2FLY Daily Ops</title>
+  <link rel="stylesheet" href="./styles.css">
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="./config.js"></script>
+  <script defer src="./common.js"></script>
+  <script defer src="./packing.js"></script>
+</head>
+<body data-page="packing" data-required-role="team" data-required-permission="edit_orders">
+<div id="toast" class="toast"></div>
+<div class="app-shell">
+  <aside class="sidebar">
+    <div class="side-brand"><div class="logo small">2F</div><div><strong>2FLY Daily Ops</strong><span>Orders • Stock • Tracking</span></div></div>
+    <nav></nav>
+    <div class="side-user"><span id="userEmail">—</span><strong id="userRole">—</strong><button id="logoutBtn" class="btn ghost">Log out</button></div>
+  </aside>
+  <section class="workspace">
+    <header class="topbar">
+      <div><h2>Packing Queue</h2><p>The packing team's single source of truth. Oldest unfinished orders stay visible until someone works them.</p></div>
+      <div class="top-actions"><a class="btn" href="./orderpage.html">Orders</a><button id="refreshBtn" class="btn">Refresh</button></div>
+    </header>
+    <main class="page">
+      <div class="page-guide packing-queue-note"><strong>How to use this page:</strong> Work oldest orders first. Click <strong>Start Packing</strong> before touching the order. When the parcel is completely prepared, click <strong>Mark Packed</strong> so shipment staff sees it as Ready to Ship.</div>
+
+      <section class="kpi-grid packing-kpis">
+        <article class="kpi"><span>Needs Packing</span><strong id="packingNeedsCount">0</strong><small>Paid + stock ready, not started</small></article>
+        <article class="kpi"><span>Being Packed</span><strong id="packingActiveCount">0</strong><small>Someone already started these</small></article>
+        <article class="kpi danger"><span>Overdue</span><strong id="packingOverdueCount">0</strong><small>Needs attention today</small></article>
+      </section>
+
+      <article class="card">
+        <div class="card-body packing-filter-bar">
+          <label>Search<input id="packingSearch" placeholder="Order number, customer, phone"></label>
+          <label>Stage<select id="packingStage"><option value="all">All Packing Work</option><option value="needs">Needs Packing</option><option value="packing">Being Packed</option></select></label>
+          <label>Fulfillment<select id="packingFulfillment"><option value="all">All Methods</option><option value="jnt">J&amp;T</option><option value="lalamove">Lalamove</option><option value="walk_in">Walk-in / Pickup</option><option value="unselected">Not Selected</option></select></label>
+          <label>Sort<select id="packingSort"><option value="oldest">Oldest First</option><option value="newest">Newest First</option></select></label>
+          <button id="packingClear" class="btn">Clear</button>
+        </div>
+      </article>
+
+      <article class="card">
+        <div class="card-head"><div><h3>Current packing work</h3><p id="packingResultCount">Loading…</p></div></div>
+        <div class="table-wrap" id="packingTable"></div>
+      </article>
+    </main>
+  </section>
+</div>
+</body>
+</html>
