@@ -83,6 +83,8 @@
     TF.$('packingNeedsCount').textContent = needs.toLocaleString();
     TF.$('packingActiveCount').textContent = active.toLocaleString();
     TF.$('packingOverdueCount').textContent = overdue.toLocaleString();
+    const navBadge = document.querySelector('[data-packing-nav-count]');
+    if (navBadge) navBadge.textContent = orders.length.toLocaleString();
   }
 
   function actionHtml(order) {
@@ -138,6 +140,16 @@
     }
   }
 
+  async function freshOrder(id) {
+    const result = await TF.state.supa
+      .from('v_daily_ops_orders_v16')
+      .select('*')
+      .eq('id', id)
+      .single();
+    if (result.error) throw result.error;
+    return result.data;
+  }
+
   async function updateStatus(order, status, note) {
     const result = await TF.state.supa.rpc('update_order_operations_v14', {
       p_order_id: order.id,
@@ -154,13 +166,19 @@
   }
 
   async function startPacking(order, button) {
-    if (!isPaid(order)) throw new Error('Payment must be fully verified before packing starts.');
-    if (TF.num(order.shortage_quantity) > 0) throw new Error('This order is still short on stock.');
-    if (!hasFulfillment(order)) throw new Error('Set the fulfillment method first.');
-    TF.setLoading(button, true, 'Starting…');
+    TF.setLoading(button, true, 'Checking…');
     try {
+      const current = await freshOrder(order.id);
+      if (current.status === 'packing') throw new Error('Another staff member already started packing this order. Refresh the queue.');
+      if (!['confirmed', 'ready_to_pack'].includes(current.status)) throw new Error('This order is no longer waiting for packing. Refresh the queue.');
+      if (!isPaid(current)) throw new Error('Payment must be fully verified before packing starts.');
+      if (TF.num(current.shortage_quantity) > 0) throw new Error('This order is still short on stock.');
+      if (!hasFulfillment(current)) throw new Error('Set the fulfillment method first.');
+      button.textContent = 'Starting…';
       const name = TF.state.profile?.full_name || TF.state.profile?.email || 'Staff';
-      await updateStatus(order, 'packing', `Packing started by ${name}`);
+      await updateStatus(current, 'packing', `Packing started by ${name}`);
+      const confirmed = await freshOrder(order.id);
+      if (confirmed.status !== 'packing') throw new Error('Packing did not start. Refresh and try again.');
       TF.toast(`${order.order_number} is now being packed`);
       await load();
     } finally {
@@ -169,12 +187,16 @@
   }
 
   async function markPacked(order, button) {
-    if (order.status !== 'packing') throw new Error('Refresh first. This order is no longer in Packing.');
     if (!confirm(`Mark ${order.order_number} as fully packed and Ready to Ship?`)) return;
-    TF.setLoading(button, true, 'Saving…');
+    TF.setLoading(button, true, 'Checking…');
     try {
+      const current = await freshOrder(order.id);
+      if (current.status !== 'packing') throw new Error('This order is no longer in Packing. Refresh the queue.');
+      button.textContent = 'Saving…';
       const name = TF.state.profile?.full_name || TF.state.profile?.email || 'Staff';
-      await updateStatus(order, 'ready_to_ship', `Packing completed by ${name}; ready to ship`);
+      await updateStatus(current, 'ready_to_ship', `Packing completed by ${name}; ready to ship`);
+      const confirmed = await freshOrder(order.id);
+      if (confirmed.status !== 'ready_to_ship') throw new Error('Ready-to-Ship update did not save. Refresh and try again.');
       TF.toast(`${order.order_number} is Ready to Ship`);
       await load();
     } finally {
@@ -235,6 +257,7 @@
     });
     TF.$('packingTable').addEventListener('click', handleAction);
     window.addEventListener('twofly:refresh', () => load().catch((error) => TF.fail(error, 'Packing Queue failed')));
+    setInterval(() => { if (!document.hidden) load().catch((error) => console.warn('Packing Queue auto-refresh failed:', error)); }, 60000);
     await load();
   }).catch((error) => TF.fail(error, 'Packing Queue failed'));
 })();
