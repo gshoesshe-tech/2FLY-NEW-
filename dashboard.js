@@ -190,6 +190,19 @@
     TF.$('categoryBreakdown').innerHTML = `<table><thead><tr><th>Category</th><th>Pieces</th></tr></thead><tbody>${rows.map(([name, row]) => `<tr><td><strong>${TF.esc(name)}</strong></td><td>${row.pieces.toLocaleString()}</td></tr>`).join('') || '<tr><td colspan="2" class="empty">No category records in this period.</td></tr>'}</tbody></table>`;
   }
 
+  function renderDataCoverage() {
+    const el = TF.$('dashboardDataCoverage');
+    if (!el) return;
+    const dates = orders.map((order) => TF.isoDate(order.order_date)).filter(Boolean).sort();
+    if (!dates.length) {
+      el.innerHTML = '<strong>Data coverage:</strong> No order dates loaded.';
+      return;
+    }
+    const newest = dates[dates.length - 1];
+    const oldest = dates[0];
+    el.innerHTML = `<strong>Data coverage:</strong> ${orders.length.toLocaleString()} orders loaded • ${TF.formatDate(oldest)} → ${TF.formatDate(newest)}. Use All Dates or a custom range to review older months.`;
+  }
+
   function updateFilterUi() {
     const custom = TF.$('dashboardPreset').value === 'custom';
     TF.$('dashboardStartWrap').classList.toggle('hidden', !custom);
@@ -207,21 +220,47 @@
     renderStatus(selection);
     renderAccounts(selection);
     renderCategories(selection);
+    renderDataCoverage();
+  }
+
+  async function fetchAll(table, columns, orderBy = []) {
+    const pageSize = 1000;
+    const all = [];
+    for (let from = 0; from < 200000; from += pageSize) {
+      let query = TF.state.supa.from(table).select(columns);
+      for (const rule of orderBy) query = query.order(rule.column, { ascending: rule.ascending });
+      const result = await query.range(from, from + pageSize - 1);
+      if (result.error) throw result.error;
+      const page = result.data || [];
+      all.push(...page);
+      if (page.length < pageSize) break;
+    }
+    return all;
   }
 
   async function load() {
-    const [ordersResult, paymentsResult, allocationsResult, itemsResult] = await Promise.all([
-      TF.state.supa.from('v_daily_ops_orders_v15').select('*').order('order_date', { ascending: false }).limit(10000),
-      TF.state.supa.from('payments').select('id,order_id,payment_date,amount,status,cash_account_id,cash_accounts(name)').order('payment_date', { ascending: false }).limit(20000),
-      TF.state.supa.from('payment_allocations').select('payment_id,order_id,allocation_type,amount').limit(50000),
-      TF.state.supa.from('order_items').select('order_id,category_id,quantity,line_total').limit(50000)
+    const [orderRows, paymentRows, allocationRows, itemRows] = await Promise.all([
+      fetchAll('v_daily_ops_orders_v16', '*', [
+        { column: 'order_date', ascending: false },
+        { column: 'created_at', ascending: false }
+      ]),
+      fetchAll('payments', 'id,order_id,payment_date,amount,status,cash_account_id,cash_accounts(name)', [
+        { column: 'payment_date', ascending: false },
+        { column: 'id', ascending: false }
+      ]),
+      fetchAll('payment_allocations', 'payment_id,order_id,allocation_type,amount', [
+        { column: 'payment_id', ascending: true },
+        { column: 'order_id', ascending: true }
+      ]),
+      fetchAll('order_items', 'order_id,category_id,quantity,line_total,line_number', [
+        { column: 'order_id', ascending: true },
+        { column: 'line_number', ascending: true }
+      ])
     ]);
-    const error = ordersResult.error || paymentsResult.error || allocationsResult.error || itemsResult.error;
-    if (error) throw error;
-    orders = ordersResult.data || [];
-    payments = paymentsResult.data || [];
-    allocations = allocationsResult.data || [];
-    items = itemsResult.data || [];
+    orders = orderRows;
+    payments = paymentRows;
+    allocations = allocationRows;
+    items = itemRows;
     render();
   }
 
