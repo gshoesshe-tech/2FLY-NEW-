@@ -753,7 +753,7 @@
     if (order.facebook_profile) actions.push(`<a href="${TF.esc(facebookUrl(order.facebook_profile))}" target="_blank" rel="noopener noreferrer">Open Facebook</a>`);
     if (TF.num(order.pending_payment_count) > 0 && TF.can('confirm_payments')) actions.push(`<button type="button" data-action="pay" data-id="${order.id}">Review Payment</button>`);
     if (!TF.num(order.pending_payment_count) && (TF.can('create_orders') || TF.can('edit_orders')) && ['unpaid', 'partial'].includes(order.payment_status) && !['cancelled', 'refunded'].includes(order.status)) actions.push(`<button type="button" data-action="pay" data-id="${order.id}">Submit Payment</button>`);
-    if (TF.can('update_tracking') && simpleStatus(order) === 'pending' && hasFulfillment(order) && ['paid', 'overpaid'].includes(order.payment_status) && TF.num(order.shortage_quantity) <= 0) actions.push(`<button type="button" data-action="processing" data-id="${order.id}">Start Processing</button>`);
+    if (TF.can('edit_orders') && ['confirmed', 'ready_to_pack'].includes(order.status) && hasFulfillment(order) && ['paid', 'overpaid'].includes(order.payment_status) && TF.num(order.shortage_quantity) <= 0) actions.push(`<a href="./packing.html">Open Packing Queue</a>`);
     if (TF.can('update_tracking') && simpleStatus(order) === 'processing') {
       if (isJnt(order) && !order.tracking_number) actions.push(`<button type="button" data-action="openTracking" data-id="${order.id}">Add J&T Tracking</button>`);
       else actions.push(`<button type="button" data-action="complete" data-id="${order.id}">Mark Delivered</button>`);
@@ -771,7 +771,8 @@
     if (simpleStatus(order) === 'pending') {
       if (!hasFulfillment(order)) return `<button class="btn primary small" data-action="view" data-id="${order.id}">Set Fulfillment</button>`;
       if (TF.num(order.shortage_quantity) > 0) return `<button class="btn small order-view-btn" data-action="view" data-id="${order.id}">View Order</button>`;
-      return `<button class="btn primary small" data-action="processing" data-id="${order.id}">Start Processing</button>`;
+      if (TF.can('edit_orders')) return `<a class="btn primary small" href="./packing.html">Packing Queue</a>`;
+      return `<button class="btn small order-view-btn" data-action="view" data-id="${order.id}">View</button>`;
     }
     if (simpleStatus(order) === 'processing') {
       if (isJnt(order) && !order.tracking_number) return `<button class="btn primary small" data-action="openTracking" data-id="${order.id}">Add Tracking</button>`;
