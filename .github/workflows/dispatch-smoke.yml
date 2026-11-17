@@ -1,0 +1,49 @@
+name: Dispatch Worker smoke test
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'dispatch-worker/**'
+      - '.github/workflows/dispatch-smoke.yml'
+  workflow_dispatch:
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Wait for Worker deployment and verify production origins
+        shell: bash
+        run: |
+          set -euo pipefail
+          worker="https://twofly-dispatch-photos.gshoeswho.workers.dev"
+
+          check_origin() {
+            origin="$1"
+            path="$2"
+            expected_status="$3"
+            for attempt in $(seq 1 18); do
+              headers="$(mktemp)"
+              body="$(mktemp)"
+              status="$(curl -sS -o "$body" -D "$headers" -w '%{http_code}' \
+                -H "Origin: $origin" \
+                "$worker$path" || true)"
+              allow="$(awk 'BEGIN{IGNORECASE=1} /^access-control-allow-origin:/ {gsub(/\r/,"",$2); print $2}' "$headers" | tail -1)"
+              if [[ "$status" == "$expected_status" && "$allow" == "$origin" ]]; then
+                echo "PASS $origin $path -> $status with ACAO $allow"
+                rm -f "$headers" "$body"
+                return 0
+              fi
+              echo "Attempt $attempt: $origin $path -> HTTP $status, ACAO '${allow:-missing}', body: $(head -c 180 "$body")"
+              rm -f "$headers" "$body"
+              sleep 10
+            done
+            return 1
+          }
+
+          # Legacy standalone route: no credentials should be 401, not 403.
+          check_origin "https://2flyshipment.netlify.app" "/me" "401"
+
+          # Preserve both 2FLY Numbers frontends. No Supabase token should be 401, not 403.
+          check_origin "https://2flynumbers.netlify.app" "/integrated/me" "401"
+          check_origin "https://2flyfigures.netlify.app" "/integrated/me" "401"
