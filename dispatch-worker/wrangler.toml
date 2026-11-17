@@ -1,0 +1,27 @@
+name = "twofly-dispatch-photos"
+main = "worker.mjs"
+compatibility_date = "2026-11-01"
+keep_vars = true
+
+# Reuse the EXISTING Dispatch resources.
+[[d1_databases]]
+binding = "DB"
+database_name = "2fly-dispatch-db"
+database_id = "39fedaf5-11d3-4196-95ec-7d54ddc5519d"
+
+[[r2_buckets]]
+binding = "PHOTOS"
+bucket_name = "2fly-dispatch-photos"
+
+[vars]
+# Standalone Dispatch production site.
+ALLOWED_ORIGIN = "https://2flyshipment.netlify.app"
+# Preserve both standalone access and the existing 2FLY Numbers integrations.
+ALLOWED_ORIGINS = "https://2flyshipment.netlify.app,https://2flynumbers.netlify.app,https://2flyfigures.netlify.app"
+# Required by /integrated/* for existing 2FLY Numbers Supabase identity/permissions.
+SUPABASE_URL = "https://yzzqhenrbzapnpsgwngu.supabase.co/"
+# Keep cleanup disabled until production behavior is re-verified.
+CLEANUP_ENABLED = "false"
+
+[triggers]
+crons = ["*/10 * * * *"]
