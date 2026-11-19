@@ -5,6 +5,7 @@
   const Parser = window.TwoFlyAIParser;
   let records = [];
   let savingBatch = false;
+  const LIVE_TEST = new URLSearchParams(location.search).get('live') === '1';
 
   function representativeProduct(categoryId, preferredSku) {
     const preferred = TF.state.productByCode.get(String(preferredSku || '').toUpperCase());
@@ -211,7 +212,7 @@
         '<div class="notice danger' + (currentIssues.length ? '' : ' hidden') + '" data-card-issues>' + currentIssues.map((x) => '• ' + TF.esc(x)).join('<br>') + '</div>' +
         (record.save_error ? '<div class="notice danger">' + TF.esc(record.save_error) + '</div>' : '') +
         '<div class="ai-card-actions">' +
-          '<button class="btn primary" data-ai-save="' + record.id + '"' + (record.saved || currentIssues.length ? ' disabled' : '') + '>' + (record.saved ? 'Saved' : 'Save Order') + '</button>' +
+          '<button class="btn primary" data-ai-save="' + record.id + '"' + (record.saved || currentIssues.length || !LIVE_TEST ? ' disabled' : '') + '>' + (record.saved ? 'Saved' : (LIVE_TEST ? 'Save Order' : 'Test Mode')) + '</button>' +
           '<button class="btn" data-ai-remove="' + record.id + '"' + (record.saved ? ' disabled' : '') + '>Remove from batch</button>' +
         '</div>' +
       '</div>' +
@@ -219,6 +220,13 @@
   }
 
   function render() {
+    const modeNotice = TF.$('aiModeNotice');
+    if (modeNotice) {
+      modeNotice.className = 'notice ' + (LIVE_TEST ? 'warn' : 'info');
+      modeNotice.innerHTML = LIVE_TEST
+        ? '<strong>LIVE TEST MODE.</strong> Saving will create real orders in your current 2FLY Numbers database.'
+        : '<strong>SAFE TEST MODE.</strong> Parsing, shipping, validation and payment review work normally, but Save Order is disabled. Add <code>?live=1</code> only when you intentionally want to create a real test order.';
+    }
     TF.$('aiDetectedCount').textContent = records.length.toLocaleString();
     TF.$('aiSavedCount').textContent = records.filter((record) => record.saved).length.toLocaleString();
     TF.$('aiReadyCount').textContent = records.filter((record) => !record.saved && issues(record).length === 0).length.toLocaleString();
@@ -400,6 +408,7 @@
   }
 
   async function saveOne(id, button) {
+    if (!LIVE_TEST) { TF.toast('Safe Test Mode is on. No real order was created.', true); return; }
     const record = records.find((row) => row.id === id);
     if (!record) return;
     TF.setLoading(button, true, 'Saving…');
@@ -416,6 +425,7 @@
   }
 
   async function saveAllReady() {
+    if (!LIVE_TEST) { TF.toast('Safe Test Mode is on. No real orders were created.', true); return; }
     if (savingBatch) return;
     const button = TF.$('aiSaveReadyBtn');
     const ready = records.filter((record) => !record.saved && issues(record).length === 0);
