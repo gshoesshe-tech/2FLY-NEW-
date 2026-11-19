@@ -580,3 +580,43 @@ body[data-page="orders"] .order-filter-panel{grid-template-columns:repeat(5,minm
 /* Packing Queue sidebar workload count */
 .nav-btn{position:relative}
 .nav-count{display:inline-flex;align-items:center;justify-content:center;min-width:22px;height:20px;padding:0 6px;margin-left:auto;border-radius:999px;background:var(--danger-soft);border:1px solid #74323b;color:#f0aab2;font-size:10px;font-weight:900;line-height:1}
+
+
+/* AI Order Intake V1 */
+.ai-beta-pill{display:inline-flex;align-items:center;padding:2px 7px;border-radius:999px;font-size:10px;font-weight:900;vertical-align:middle;border:1px solid #38546f;background:#10263a;color:#9ed0ff}
+.ai-intake-page{display:grid;gap:18px}
+.ai-bulk-paste{min-height:280px}
+.ai-paste-actions,.ai-card-actions{display:flex;gap:10px;flex-wrap:wrap}
+.ai-intake-kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px}
+.ai-intake-kpis .card-body{display:flex;flex-direction:column;gap:4px}
+.ai-intake-kpis span{font-size:12px;color:var(--muted)}
+.ai-intake-kpis strong{font-size:28px}
+.ai-batch-tools-grid{display:grid;grid-template-columns:minmax(180px,1fr) minmax(180px,1fr) auto auto;gap:12px;align-items:end}
+.ai-orders-list{display:grid;gap:18px}
+.ai-empty-state{padding:36px}
+.ai-order-card{overflow:hidden}
+.ai-order-card-head{align-items:flex-start}
+.ai-order-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.ai-order-grid .span-2{grid-column:span 2}
+.ai-order-items td{vertical-align:top}
+.ai-source-items{display:block;line-height:1.55}
+.ai-money-grid{display:grid;grid-template-columns:1fr 1.2fr 1fr;gap:12px;align-items:stretch}
+.ai-money-grid>div,.ai-money-grid>label{padding:14px;border:1px solid var(--line);border-radius:12px;background:var(--panel-soft)}
+.ai-money-grid>div{display:flex;flex-direction:column;justify-content:center;gap:5px}
+.ai-money-grid span,.ai-money-grid small{color:var(--muted);font-size:12px}
+.ai-money-grid strong{font-size:20px}
+.field-attention{border-color:#8a5a24!important;box-shadow:0 0 0 1px rgba(214,145,64,.12)}
+.ai-payment-box{padding:16px;border:1px solid var(--line);border-radius:14px;background:var(--panel-soft)}
+.ai-payment-toggle{display:flex;align-items:center;gap:8px;margin-bottom:10px}
+.ai-payment-fields{margin-top:12px}
+.ai-card-warning{margin:0}
+.ai-duplicate-confirm{display:flex;gap:8px;align-items:center;margin-top:10px}
+@media(max-width:980px){
+  .ai-intake-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .ai-batch-tools-grid{grid-template-columns:1fr 1fr}
+  .ai-money-grid{grid-template-columns:1fr}
+}
+@media(max-width:640px){
+  .ai-intake-kpis,.ai-batch-tools-grid,.ai-order-grid{grid-template-columns:1fr}
+  .ai-order-grid .span-2{grid-column:span 1}
+}

@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta content="width=device-width,initial-scale=1" name="viewport"/>
+<title>AI Order Intake | 2FLY Daily Ops</title>
+<link href="./styles.css" rel="stylesheet"/>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="./config.js"></script>
+<script defer src="./common.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/tesseract.js@7.0.0/dist/tesseract.min.js"></script>
+<script defer src="./ai-order-parser.js"></script>
+<script defer src="./ai-orders.js"></script>
+</head>
+<body data-page="ai-orders" data-required-role="team" data-required-permission="create_orders">
+<div class="toast" id="toast"></div>
+<div class="app-shell">
+<aside class="sidebar">
+<div class="side-brand"><div class="logo small">2F</div><div><strong>2FLY Daily Ops</strong><span>Orders • Stock • Tracking</span></div></div>
+<nav></nav>
+<div class="side-user"><span id="userEmail">—</span><strong id="userRole">—</strong><button class="btn ghost" id="logoutBtn">Log out</button></div>
+</aside>
+
+<section class="workspace">
+<header class="topbar">
+  <div><h2>AI Order Intake <span class="ai-beta-pill">V1</span></h2><p>Paste one or many 2FLY.GALLERIA order forms, review the exceptions, then create normal 2FLY Numbers orders.</p></div>
+  <div class="top-actions"><a class="btn" href="./new-order.html">Manual New Order</a><a class="btn" href="./orderpage.html">Orders</a></div>
+</header>
+
+<main class="page ai-intake-page">
+  <div id="aiModeNotice" class="notice info"></div>
+  <div class="page-guide"><strong>Safe add-on workflow.</strong> Nothing is saved until you approve it. J&amp;T requires a shipping fee; Lalamove and Walk-in automatically use ₱0. Payments stay For Verification.</div>
+
+  <section class="card ai-paste-card">
+    <div class="card-head">
+      <div><h3>Paste website orders</h3><p>Paste one complete order form or many forms back-to-back. V1 recognizes the standard 2FLY.GALLERIA format.</p></div>
+    </div>
+    <div class="card-body stack">
+      <textarea id="aiBulkPaste" class="paste-box ai-bulk-paste" placeholder="Paste one or many 🛒 ORDER FORM – 2FLY.GALLERIA forms here..."></textarea>
+      <div class="ai-paste-actions">
+        <button class="btn primary" id="aiAnalyzeBtn">Analyze Orders</button>
+        <button class="btn" id="aiClearBtn">Clear</button>
+      </div>
+      <div class="notice warn hidden" id="aiBatchNotice"></div>
+    </div>
+  </section>
+
+  <section class="ai-intake-kpis">
+    <article class="card"><div class="card-body"><span>Detected</span><strong id="aiDetectedCount">0</strong></div></article>
+    <article class="card"><div class="card-body"><span>Ready</span><strong id="aiReadyCount">0</strong></div></article>
+    <article class="card"><div class="card-body"><span>Needs review</span><strong id="aiReviewCount">0</strong></div></article>
+    <article class="card"><div class="card-body"><span>Saved</span><strong id="aiSavedCount">0</strong></div></article>
+  </section>
+
+  <section class="card hidden" id="aiBatchTools">
+    <div class="card-head"><div><h3>Batch defaults</h3><p>Use these only when several orders share the same fulfillment or payment settings.</p></div></div>
+    <div class="card-body ai-batch-tools-grid">
+      <label>Fulfillment
+        <select id="aiDefaultFulfillment">
+          <option value="">No batch default</option>
+          <option value="jnt">J&amp;T</option>
+          <option value="lalamove">Lalamove</option>
+          <option value="walk_in">Walk-in / Pickup</option>
+        </select>
+      </label>
+      <label>Receiving account
+        <select id="aiDefaultAccount"><option value="">No batch default</option></select>
+      </label>
+      <button class="btn" id="aiApplyDefaultsBtn">Apply to unsaved orders</button>
+      <button class="btn primary" id="aiSaveReadyBtn">Save All Ready Orders</button>
+    </div>
+  </section>
+
+  <section id="aiOrdersList" class="ai-orders-list">
+    <div class="empty ai-empty-state">Paste your orders above to start.</div>
+  </section>
+</main>
+</section>
+</div>
+</body>
+</html>
