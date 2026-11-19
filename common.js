@@ -212,6 +212,7 @@
       ['dashboard', './dashboard.html', 'Dashboard', true],
       ['product-sales', './product-sales.html', 'Product Sales', can('view_daily_summary') || isManagement()],
       ['new-order', './new-order.html', 'New Order', can('create_orders')],
+      ['ai-orders', './ai-orders.html', 'AI Order Intake', can('create_orders')],
       ['orders', './orderpage.html', 'Orders', can('create_orders') || can('edit_orders') || can('confirm_payments')],
       ['packing', './packing.html', 'Packing Queue <span class="nav-count" data-packing-nav-count>0</span>', can('edit_orders') || isManagement()],
       ['waybill', './waybill.html', 'Waybill', can('update_tracking') || can('edit_orders') || isManagement()],
