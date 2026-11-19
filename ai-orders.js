@@ -35,6 +35,12 @@
         errors.push('Unknown category: ' + group.label);
         continue;
       }
+      if (TF.normalizeCategoryLabel(group.label) === 'BUSINESS BUNDLES' &&
+          category.code !== 'BUSINESS_BUNDLES' &&
+          !/BUSINESS\s+BUNDLES?/i.test(String(category.name || ''))) {
+        errors.push('Business Bundles is mapped to the wrong 2FLY Numbers category (' + category.name + '). Fix the Business Bundles database category before saving.');
+        continue;
+      }
 
       const quantity = TF.num(group.quantity);
       const amount = TF.num(group.amount);
