@@ -99,6 +99,13 @@
       payment_account_id: '',
       payment_reference: '',
       payment_proof: null,
+      ocr_status: '',
+      ocr_message: '',
+      ocr_progress: 0,
+      ocr_amount: null,
+      ocr_reference: '',
+      ocr_date: '',
+      ocr_account_id: '',
       duplicate_matches: [],
       allow_duplicate: false,
       saved: false,
@@ -119,6 +126,7 @@
       if (!record.payment_account_id) list.push('Select the receiving account.');
       if (record.payment_method === 'gcash' && !record.payment_reference.trim()) list.push('GCash reference number is required.');
       if (record.payment_method === 'gcash' && !record.payment_proof) list.push('GCash payment proof is required.');
+      if (record.ocr_amount !== null && Math.abs(TF.num(record.ocr_amount) - expectedTotal(record)) > 0.02) list.push('Payment screenshot amount ' + TF.money(record.ocr_amount) + ' does not match expected ' + TF.money(expectedTotal(record)) + '.');
     }
     if (record.duplicate_matches.length && !record.allow_duplicate) list.push('Possible duplicate needs confirmation.');
     return list;
@@ -163,6 +171,10 @@
     const savedHtml = record.saved
       ? '<div class="notice ok"><strong>' + TF.esc(record.saved_order_number || 'Order saved') + '</strong> is now in 2FLY Numbers.' + (record.saved_order_id ? ' <a class="btn small" href="./orderpage.html?open=' + encodeURIComponent(record.saved_order_id) + '">View order</a>' : '') + '</div>'
       : '';
+    const ocrTone = record.ocr_status === 'done' ? 'ok' : record.ocr_status === 'error' ? 'danger' : 'info';
+    const ocrHtml = record.ocr_status
+      ? '<div class="notice ' + ocrTone + ' ai-ocr-status"><strong>' + (record.ocr_status === 'reading' ? 'Reading payment screenshot…' : record.ocr_status === 'done' ? 'Screenshot read' : 'Screenshot reader needs review') + '</strong><br><span>' + TF.esc(record.ocr_message || '') + '</span></div>'
+      : '';
 
     return '<article class="card ai-order-card" data-card-id="' + record.id + '">' +
       '<div class="card-head ai-order-card-head"><div><span class="eyebrow">ORDER ' + record.index + '</span><h3>' + TF.esc(record.customer_name || 'Unnamed customer') + '</h3><p>' + TF.num(record.total_quantity).toLocaleString() + ' pcs • ' + TF.money(record.product_total) + ' products</p></div>' +
@@ -200,7 +212,8 @@
           '<div class="ai-payment-heading"><div><strong>Payment proof</strong><small>Upload the customer payment screenshot here. Payment stays For Verification.</small></div></div>' +
           '<label class="ai-payment-toggle"><input type="checkbox" data-ai-field="payment_enabled" data-id="' + record.id + '"' + (record.payment_enabled ? ' checked' : '') + (record.saved ? ' disabled' : '') + '> <strong>Submit payment for verification with this order</strong></label>' +
           (record.payment_enabled ? '<div class="ai-order-grid ai-payment-fields">' +
-            '<label class="span-2 ai-proof-upload">Upload GCash screenshot / payment proof<input type="file" accept="image/*,application/pdf" data-ai-proof data-id="' + record.id + '"' + (record.saved ? ' disabled' : '') + '><small>' + (record.payment_proof ? TF.esc(record.payment_proof.name) + ' selected' : 'Upload the customer payment screenshot here. It will still require verification.') + '</small></label>' +
+            '<label class="span-2 ai-proof-upload">Upload GCash screenshot / payment proof<input type="file" accept="image/*" data-ai-proof data-id="' + record.id + '"' + (record.saved ? ' disabled' : '') + '><small>' + (record.payment_proof ? TF.esc(record.payment_proof.name) + ' selected' : 'Upload the customer payment screenshot here. It will still require verification.') + '</small></label>' +
+            '<div class="span-2">' + ocrHtml + '</div>' +
             '<label>Amount sent<input type="number" min="0" step="0.01" data-ai-field="payment_amount" data-id="' + record.id + '" value="' + TF.num(paymentAmount).toFixed(2) + '"' + (record.saved ? ' disabled' : '') + '></label>' +
             '<label>Reference number<input data-ai-field="payment_reference" data-id="' + record.id + '" value="' + TF.esc(record.payment_reference) + '" placeholder="GCash reference"' + (record.saved ? ' disabled' : '') + '></label>' +
             '<label>Receiving account<select data-ai-field="payment_account_id" data-id="' + record.id + '"' + (record.saved ? ' disabled' : '') + '>' + accountOptions(record.payment_account_id) + '</select></label>' +
@@ -509,12 +522,180 @@
     refreshDerived(record);
   }
 
-  function handleProof(event) {
+  function normalizeOcr(value) {
+    return String(value || '').replace(/\r/g, '\n').replace(/[ \t]+/g, ' ').trim();
+  }
+
+  function amountCandidates(text) {
+    const found = [];
+    const seen = new Set();
+    const add = (value, source) => {
+      const num = Number(String(value || '').replace(/,/g, ''));
+      if (!Number.isFinite(num) || num <= 0 || num > 10000000) return;
+      const key = num.toFixed(2);
+      if (seen.has(key)) return;
+      seen.add(key);
+      found.push({ value: num, source: source || '' });
+    };
+    const currency = /(?:₱|PHP|PHP\s*₱|P\s*)([\d,]+(?:\.\d{1,2})?)/gi;
+    let match;
+    while ((match = currency.exec(text))) add(match[1], match[0]);
+    for (const line of text.split('\n')) {
+      if (!/(?:amount|total|paid|payment|sent)/i.test(line)) continue;
+      const nums = line.match(/[\d,]+(?:\.\d{1,2})?/g) || [];
+      nums.forEach((value) => add(value, line));
+    }
+    return found;
+  }
+
+  function extractOcrAmount(text, expected) {
+    const candidates = amountCandidates(text);
+    if (!candidates.length) return null;
+    const exact = candidates.find((item) => Math.abs(item.value - expected) <= 0.02);
+    if (exact) return exact.value;
+    candidates.sort((a, b) => Math.abs(a.value - expected) - Math.abs(b.value - expected));
+    return candidates[0].value;
+  }
+
+  function extractOcrReference(text) {
+    const lines = text.split('\n').map((line) => line.trim()).filter(Boolean);
+    for (let i = 0; i < lines.length; i += 1) {
+      if (!/(?:ref(?:erence)?(?:\s*(?:no|number|#|id))?|transaction\s*(?:no|number|id))/i.test(lines[i])) continue;
+      const joined = lines[i] + ' ' + (lines[i + 1] || '');
+      const after = joined.replace(/^.*?(?:ref(?:erence)?(?:\s*(?:no|number|#|id))?|transaction\s*(?:no|number|id))[\s:.\-#]*/i, '');
+      const compact = after.replace(/[^A-Z0-9]/gi, '');
+      const digitRun = compact.match(/\d{10,20}/);
+      if (digitRun) return digitRun[0];
+      const mixed = compact.match(/[A-Z0-9]{10,24}/i);
+      if (mixed) return mixed[0].toUpperCase();
+    }
+    return '';
+  }
+
+  function dateToIso(year, month, day) {
+    const y = Number(year), m = Number(month), d = Number(day);
+    if (!y || !m || !d || y < 2020 || y > 2100 || m < 1 || m > 12 || d < 1 || d > 31) return '';
+    return String(y).padStart(4, '0') + '-' + String(m).padStart(2, '0') + '-' + String(d).padStart(2, '0');
+  }
+
+  function extractOcrDate(text) {
+    const months = { jan:1,feb:2,mar:3,apr:4,may:5,jun:6,jul:7,aug:8,sep:9,sept:9,oct:10,nov:11,dec:12 };
+    let m = text.match(/\b(Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\s+(\d{1,2}),?\s+(20\d{2})\b/i);
+    if (m) return dateToIso(m[3], months[m[1].slice(0,4).toLowerCase()] || months[m[1].slice(0,3).toLowerCase()], m[2]);
+    m = text.match(/\b(\d{1,2})[\/\-](\d{1,2})[\/\-](20\d{2})\b/);
+    if (m) {
+      const first = Number(m[1]), second = Number(m[2]);
+      if (first > 12) return dateToIso(m[3], second, first);
+      return dateToIso(m[3], first, second);
+    }
+    return '';
+  }
+
+  function extractOcrAccount(text) {
+    const normalizedText = String(text || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    const matches = [];
+    for (const account of TF.state.accounts) {
+      const candidates = [account.name, account.account_name, account.phone, account.mobile_number, account.account_number]
+        .filter(Boolean)
+        .map((value) => String(value).toLowerCase().replace(/[^a-z0-9]/g, ''))
+        .filter((value) => value.length >= 5);
+      if (candidates.some((value) => normalizedText.includes(value))) matches.push(account.id);
+    }
+    return matches.length === 1 ? matches[0] : '';
+  }
+
+  function updateOcrStatus(record, message, progress) {
+    record.ocr_status = 'reading';
+    record.ocr_message = message;
+    record.ocr_progress = progress || 0;
+    const card = document.querySelector('[data-card-id="' + record.id + '"]');
+    const box = card && card.querySelector('.ai-ocr-status');
+    if (box) {
+      box.className = 'notice info ai-ocr-status';
+      box.innerHTML = '<strong>Reading payment screenshot…</strong><br><span>' + TF.esc(message) + '</span>';
+    }
+  }
+
+  async function readPaymentScreenshot(record, file) {
+    if (!file || !String(file.type || '').startsWith('image/')) {
+      record.ocr_status = 'error';
+      record.ocr_message = 'Use an image screenshot (JPG/PNG/WebP) for automatic reading.';
+      return;
+    }
+    if (!window.Tesseract || typeof window.Tesseract.recognize !== 'function') {
+      record.ocr_status = 'error';
+      record.ocr_message = 'Screenshot reader did not load. Refresh the page and try again.';
+      return;
+    }
+
+    updateOcrStatus(record, 'Starting reader…', 0);
+    const result = await window.Tesseract.recognize(file, 'eng', {
+      logger: (info) => {
+        if (!info || info.status !== 'recognizing text') return;
+        const pct = Math.max(0, Math.min(100, Math.round(TF.num(info.progress) * 100)));
+        updateOcrStatus(record, 'Reading text ' + pct + '%', pct);
+      }
+    });
+
+    const text = normalizeOcr(result && result.data && result.data.text);
+    const amount = extractOcrAmount(text, expectedTotal(record));
+    const reference = extractOcrReference(text);
+    const paymentDate = extractOcrDate(text);
+    const accountId = extractOcrAccount(text);
+
+    record.ocr_amount = amount;
+    record.ocr_reference = reference;
+    record.ocr_date = paymentDate;
+    record.ocr_account_id = accountId;
+
+    const detected = [];
+    const missing = [];
+    if (amount !== null) {
+      record.payment_amount = amount;
+      record.payment_amount_auto = false;
+      detected.push('amount ' + TF.money(amount));
+    } else missing.push('amount');
+    if (reference) {
+      record.payment_reference = reference;
+      detected.push('reference ' + reference);
+    } else missing.push('reference');
+    if (paymentDate) {
+      record.payment_date = paymentDate;
+      detected.push('date ' + paymentDate);
+    }
+    if (accountId) {
+      record.payment_account_id = accountId;
+      const account = TF.state.accounts.find((row) => row.id === accountId);
+      detected.push('account ' + (account ? account.name : 'matched'));
+    }
+
+    record.ocr_status = detected.length ? 'done' : 'error';
+    record.ocr_message = detected.length
+      ? 'Detected ' + detected.join(' · ') + (missing.length ? '. Check manually: ' + missing.join(', ') + '.' : '.')
+      : 'Could not confidently read the payment details. Keep the screenshot attached and enter the fields manually.';
+  }
+
+  async function handleProof(event) {
     const input = event.target.closest('[data-ai-proof]');
     if (!input) return;
     const record = records.find((row) => row.id === input.dataset.id);
     if (!record || record.saved) return;
-    record.payment_proof = input.files && input.files[0] ? input.files[0] : null;
+    const file = input.files && input.files[0] ? input.files[0] : null;
+    record.payment_proof = file;
+    record.ocr_status = file ? 'reading' : '';
+    record.ocr_message = file ? 'Preparing screenshot…' : '';
+    if (!file) {
+      render();
+      return;
+    }
+    render();
+    try {
+      await readPaymentScreenshot(record, file);
+    } catch (error) {
+      console.error('Payment screenshot OCR failed:', error);
+      record.ocr_status = 'error';
+      record.ocr_message = 'Automatic reading failed. The screenshot is still attached; enter the payment details manually.';
+    }
     render();
   }
 
