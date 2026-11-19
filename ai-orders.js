@@ -91,7 +91,7 @@
       items: items,
       warnings: warnings,
       base_errors: errors,
-      payment_enabled: false,
+      payment_enabled: true,
       payment_method: 'gcash',
       payment_date: TF.today(),
       payment_amount: parsed.product_total || calculated,
@@ -197,6 +197,7 @@
         '</div>' +
 
         '<section class="ai-payment-box">' +
+          '<div class="ai-payment-heading"><div><strong>Payment proof</strong><small>Upload the customer payment screenshot here. Payment stays For Verification.</small></div></div>' +
           '<label class="ai-payment-toggle"><input type="checkbox" data-ai-field="payment_enabled" data-id="' + record.id + '"' + (record.payment_enabled ? ' checked' : '') + (record.saved ? ' disabled' : '') + '> <strong>Submit payment for verification with this order</strong></label>' +
           (record.payment_enabled ? '<div class="ai-order-grid ai-payment-fields">' +
             '<label>Payment date<input type="date" data-ai-field="payment_date" data-id="' + record.id + '" value="' + TF.esc(record.payment_date) + '"' + (record.saved ? ' disabled' : '') + '></label>' +
