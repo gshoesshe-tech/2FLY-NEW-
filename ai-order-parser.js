@@ -16,19 +16,22 @@
     const lines = text.split('\n');
     const chunks = [];
     let current = [];
+    let sawHeader = false;
     const isHeader = (line) => {
       const clean = String(line || '').replace(/[🛒]/g, '').trim().toUpperCase();
       return clean.includes('ORDER FORM') && clean.includes('2FLY.GALLERIA');
     };
     for (const line of lines) {
-      if (isHeader(line) && current.some((x) => String(x).trim())) {
-        chunks.push(current.join('\n').trim());
-        current = [];
+      if (isHeader(line)) {
+        if (sawHeader && current.some((x) => String(x).trim())) chunks.push(current.join('\n').trim());
+        current = [line];
+        sawHeader = true;
+        continue;
       }
-      current.push(line);
+      if (sawHeader) current.push(line);
     }
-    if (current.some((x) => String(x).trim())) chunks.push(current.join('\n').trim());
-    return chunks.filter(Boolean);
+    if (sawHeader && current.some((x) => String(x).trim())) chunks.push(current.join('\n').trim());
+    return sawHeader ? chunks.filter(Boolean) : [text];
   }
 
   function moneyNumber(value) {
