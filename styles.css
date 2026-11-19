@@ -601,12 +601,12 @@ body[data-page="orders"] .order-filter-panel{grid-template-columns:repeat(5,minm
 .ai-order-items td{vertical-align:top}
 .ai-source-items{display:block;line-height:1.55}
 .ai-money-grid{display:grid;grid-template-columns:1fr 1.2fr 1fr;gap:12px;align-items:stretch}
-.ai-money-grid>div,.ai-money-grid>label{padding:14px;border:1px solid var(--border);border-radius:12px;background:var(--panel-2)}
+.ai-money-grid>div,.ai-money-grid>label{padding:14px;border:1px solid var(--line);border-radius:12px;background:var(--panel-soft)}
 .ai-money-grid>div{display:flex;flex-direction:column;justify-content:center;gap:5px}
 .ai-money-grid span,.ai-money-grid small{color:var(--muted);font-size:12px}
 .ai-money-grid strong{font-size:20px}
 .field-attention{border-color:#8a5a24!important;box-shadow:0 0 0 1px rgba(214,145,64,.12)}
-.ai-payment-box{padding:16px;border:1px solid var(--border);border-radius:14px;background:var(--panel-2)}
+.ai-payment-box{padding:16px;border:1px solid var(--line);border-radius:14px;background:var(--panel-soft)}
 .ai-payment-toggle{display:flex;align-items:center;gap:8px;margin-bottom:10px}
 .ai-payment-fields{margin-top:12px}
 .ai-card-warning{margin:0}
