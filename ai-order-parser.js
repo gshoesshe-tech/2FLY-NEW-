@@ -124,6 +124,7 @@
         'Facebook Link / Profile', 'Facebook Link', 'Facebook Profile',
         'FB Link / Profile', 'FB Link', 'FB Profile', 'Messenger Link', 'Facebook'
       ].map((name) => field(lines, name)).find(Boolean) || '',
+      notes: field(lines, 'Notes'),
       groups,
       product_total: shownTotal !== null ? shownTotal : categoryTotal,
       total_quantity: shownQty !== null ? shownQty : categoryQty,
