@@ -81,6 +81,7 @@
       phone: parsed.phone || '',
       address: parsed.address || '',
       facebook_profile: parsed.facebook_profile || '',
+      notes: parsed.notes || '',
       order_date: TF.today(),
       fulfillment: '',
       shipping_fee: '',
@@ -171,6 +172,7 @@
           '<label>Name<input data-ai-field="customer_name" data-id="' + record.id + '" value="' + TF.esc(record.customer_name) + '"' + (record.saved ? ' disabled' : '') + '></label>' +
           '<label>Phone<input data-ai-field="phone" data-id="' + record.id + '" value="' + TF.esc(record.phone) + '"' + (record.saved ? ' disabled' : '') + '></label>' +
           '<label class="span-2">Address<textarea data-ai-field="address" data-id="' + record.id + '"' + (record.saved ? ' disabled' : '') + '>' + TF.esc(record.address) + '</textarea></label>' +
+          '<label class="span-2">Notes<textarea data-ai-field="notes" data-id="' + record.id + '"' + (record.saved ? ' disabled' : '') + '>' + TF.esc(record.notes) + '</textarea></label>' +
           '<label>Order date<input type="date" data-ai-field="order_date" data-id="' + record.id + '" value="' + TF.esc(record.order_date) + '"' + (record.saved ? ' disabled' : '') + '></label>' +
           '<label>Fulfillment<select data-ai-field="fulfillment" data-id="' + record.id + '"' + (record.saved ? ' disabled' : '') + '>' +
             '<option value="">Choose fulfillment</option>' +
@@ -365,7 +367,7 @@
       expected_release_date: null,
       shipping_fee_due: record.fulfillment === 'jnt' ? TF.num(record.shipping_fee) : 0,
       actual_courier_cost: 0,
-      notes: 'Created through AI Order Intake V1'
+      notes: record.notes.trim()
     };
 
     const orderItems = record.items.map((item) => ({
