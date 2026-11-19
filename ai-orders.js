@@ -37,6 +37,10 @@
 
       const quantity = TF.num(group.quantity);
       const amount = TF.num(group.amount);
+      if (group.amount === null || group.amount === undefined) {
+        errors.push(category.name + ': Category Amount is missing.');
+        continue;
+      }
       if (quantity <= 0) {
         errors.push(category.name + ': quantity is missing or zero.');
         continue;
@@ -66,7 +70,7 @@
 
     const calculated = items.reduce((sum, item) => sum + TF.num(item.amount), 0);
     if (parsed.product_total && Math.abs(TF.num(parsed.product_total) - calculated) > 0.02) {
-      warnings.push('Parsed category totals equal ' + TF.money(calculated) + ' while the form total is ' + TF.money(parsed.product_total) + '.');
+      errors.push('Product total mismatch: form says ' + TF.money(parsed.product_total) + ', valid categories equal ' + TF.money(calculated) + '.');
     }
 
     return {
@@ -155,7 +159,7 @@
           '<label class="ai-duplicate-confirm"><input type="checkbox" data-ai-field="allow_duplicate" data-id="' + record.id + '"' + (record.allow_duplicate ? ' checked' : '') + '> I checked this and want to save anyway.</label></div>'
       : '';
     const savedHtml = record.saved
-      ? '<div class="notice ok"><strong>' + TF.esc(record.saved_order_number || 'Order saved') + '</strong> is now in 2FLY Numbers.</div>'
+      ? '<div class="notice ok"><strong>' + TF.esc(record.saved_order_number || 'Order saved') + '</strong> is now in 2FLY Numbers.' + (record.saved_order_id ? ' <a class="btn small" href="./orderpage.html?open=' + encodeURIComponent(record.saved_order_id) + '">View order</a>' : '') + '</div>'
       : '';
 
     return '<article class="card ai-order-card" data-card-id="' + record.id + '">' +
@@ -231,6 +235,8 @@
     if (card) {
       const total = card.querySelector('[data-expected-total]');
       if (total) total.textContent = TF.money(expected);
+      const paymentAmountInput = card.querySelector('[data-ai-field="payment_amount"]');
+      if (paymentAmountInput && record.payment_amount_auto) paymentAmountInput.value = expected.toFixed(2);
       const status = recordStatus(record);
       const statusEl = card.querySelector('[data-card-status]');
       if (statusEl) {
