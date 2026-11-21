@@ -418,6 +418,14 @@
       return false;
     }
 
+    if (record.payment_enabled && record.payment_method === 'gcash' && record.payment_reference.trim()) {
+      await checkPaymentReferenceDuplicate(record);
+      if (record.duplicate_payment_refs.length) {
+        render();
+        return false;
+      }
+    }
+
     const fingerprint = await TF.sha256(record.raw);
     if (!record.allow_duplicate) {
       const matches = await findDuplicates(record, fingerprint);
@@ -558,19 +566,35 @@
 
     record[field] = event.target.value;
     if (field === 'fulfillment') {
-      if (record.fulfillment !== 'jnt') record.shipping_fee = '0';
-      else if (record.shipping_fee === '0') record.shipping_fee = '';
+      if (record.ocr_amount !== null) applyPaymentAmountToShipping(record, record.ocr_amount);
+      else if (record.fulfillment !== 'jnt') {
+        record.shipping_fee = '0';
+        record.shipping_fee_source = 'fulfillment';
+        record.shipping_review_message = '';
+      } else if (record.shipping_fee === '0') {
+        record.shipping_fee = '';
+        record.shipping_fee_source = '';
+      }
       if (record.payment_amount_auto) record.payment_amount = expectedTotal(record);
       render();
       return;
     }
     if (field === 'shipping_fee') {
+      record.shipping_fee_source = 'manual';
+      record.shipping_review_message = '';
+      record.shipping_warning = '';
       if (record.payment_amount_auto) record.payment_amount = expectedTotal(record);
       refreshDerived(record);
       return;
     }
     if (field === 'payment_amount') {
       record.payment_amount_auto = false;
+      if (record.fulfillment === 'jnt') applyPaymentAmountToShipping(record, record.payment_amount);
+      refreshDerived(record);
+      return;
+    }
+    if (field === 'payment_reference') {
+      record.duplicate_payment_refs = [];
       refreshDerived(record);
       return;
     }
@@ -647,16 +671,129 @@
   }
 
   function extractOcrAccount(text) {
-    const normalizedText = String(text || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-    const matches = [];
-    for (const account of TF.state.accounts) {
-      const candidates = [account.name, account.account_name, account.phone, account.mobile_number, account.account_number]
-        .filter(Boolean)
-        .map((value) => String(value).toLowerCase().replace(/[^a-z0-9]/g, ''))
-        .filter((value) => value.length >= 5);
-      if (candidates.some((value) => normalizedText.includes(value))) matches.push(account.id);
+    return matchGcashAccount(text);
+  }
+
+
+  function normalizeIdentifier(value) {
+    return String(value || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+  }
+
+  function resolveCashAccountId(accountName) {
+    const wanted = normalizeIdentifier(accountName);
+    const match = TF.state.accounts.find((account) => {
+      const live = normalizeIdentifier(account.name);
+      return live === wanted || live.startsWith(wanted) || wanted.startsWith(live);
+    });
+    return match ? match.id : '';
+  }
+
+  function matchGcashAccount(text) {
+    const raw = String(text || '');
+    const compact = normalizeIdentifier(raw);
+    const digitText = raw.replace(/\D/g, '');
+    const scored = GCASH_ACCOUNT_CLUES.map((clue) => {
+      let score = 0;
+      const matched = [];
+      for (const suffix of clue.user_id_suffixes) {
+        if (compact.includes(normalizeIdentifier(suffix))) {
+          score += 100;
+          matched.push('User ID');
+          break;
+        }
+      }
+      for (const prefix of clue.mobile_prefixes) {
+        if (digitText.includes(String(prefix).replace(/\D/g, ''))) {
+          score += 80;
+          matched.push('mobile');
+          break;
+        }
+      }
+      if (clue.masked_name_patterns.some((pattern) => pattern.test(raw))) {
+        score += 30;
+        matched.push('masked name');
+      }
+      return { clue, score, matched };
+    }).filter((row) => row.score > 0).sort((a, b) => b.score - a.score);
+
+    if (!scored.length) return { id: '', confidence: '', label: '', matched: [] };
+    if (scored.length > 1 && scored[0].score === scored[1].score) return { id: '', confidence: '', label: '', matched: [] };
+
+    const winner = scored[0];
+    const id = resolveCashAccountId(winner.clue.account_name);
+    if (!id) return { id: '', confidence: '', label: winner.clue.account_name, matched: winner.matched };
+    return {
+      id,
+      label: winner.clue.account_name,
+      matched: winner.matched,
+      confidence: winner.score >= 80 ? 'high' : 'medium'
+    };
+  }
+
+  function roundMoney(value) {
+    return Math.round((TF.num(value) + Number.EPSILON) * 100) / 100;
+  }
+
+  function applyPaymentAmountToShipping(record, amount) {
+    record.shipping_warning = '';
+    record.shipping_review_message = '';
+
+    if (record.fulfillment !== 'jnt') {
+      record.shipping_fee = '0';
+      record.shipping_fee_source = 'fulfillment';
+      return;
     }
-    return matches.length === 1 ? matches[0] : '';
+
+    const difference = roundMoney(TF.num(amount) - TF.num(record.product_total));
+    if (difference < 0) {
+      record.shipping_fee = '';
+      record.shipping_fee_source = '';
+      record.shipping_review_message = 'Payment is ' + TF.money(Math.abs(difference)) + ' below the product total. Do not calculate a negative shipping fee.';
+      return;
+    }
+
+    record.shipping_fee = difference.toFixed(2);
+    record.shipping_fee_source = 'payment';
+
+    if (difference === 0) {
+      record.shipping_review_message = 'J&T shipping calculated as ₱0. Review this order before saving.';
+      return;
+    }
+
+    const productTotal = Math.max(1, TF.num(record.product_total));
+    if (difference >= 1500 || difference / productTotal >= 0.25) {
+      record.shipping_warning = 'Calculated J&T shipping is ' + TF.money(difference) + ', which is unusually high. Please review.';
+    }
+  }
+
+  function normalizePaymentReference(value) {
+    return normalizeIdentifier(value);
+  }
+
+  async function checkPaymentReferenceDuplicate(record) {
+    const reference = normalizePaymentReference(record.payment_reference);
+    record.duplicate_payment_refs = [];
+    if (!reference || reference.length < 6) return [];
+
+    record.duplicate_payment_checking = true;
+    try {
+      const result = await TF.state.supa
+        .from('payments')
+        .select('order_id,reference_number,status,amount,payment_date')
+        .not('reference_number', 'is', null)
+        .limit(5000);
+      if (result.error) throw result.error;
+      const matches = (result.data || []).filter((payment) =>
+        normalizePaymentReference(payment.reference_number) === reference
+      );
+      record.duplicate_payment_refs = matches;
+      return matches;
+    } catch (error) {
+      console.warn('Payment reference duplicate check skipped:', error);
+      return [];
+    } finally {
+      record.duplicate_payment_checking = false;
+    }
   }
 
   function updateOcrStatus(record, message, progress) {
@@ -696,32 +833,39 @@
     const amount = extractOcrAmount(text, expectedTotal(record));
     const reference = extractOcrReference(text);
     const paymentDate = extractOcrDate(text);
-    const accountId = extractOcrAccount(text);
+    const accountMatch = extractOcrAccount(text);
 
     record.ocr_amount = amount;
     record.ocr_reference = reference;
     record.ocr_date = paymentDate;
-    record.ocr_account_id = accountId;
+    record.ocr_account_id = accountMatch.id || '';
+    record.ocr_account_confidence = accountMatch.confidence || '';
 
     const detected = [];
     const missing = [];
     if (amount !== null) {
       record.payment_amount = amount;
       record.payment_amount_auto = false;
+      applyPaymentAmountToShipping(record, amount);
       detected.push('amount ' + TF.money(amount));
+      if (record.fulfillment === 'jnt' && record.shipping_fee_source === 'payment') detected.push('shipping ' + TF.money(record.shipping_fee));
     } else missing.push('amount');
     if (reference) {
       record.payment_reference = reference;
       detected.push('reference ' + reference);
+      await checkPaymentReferenceDuplicate(record);
+      if (record.duplicate_payment_refs.length) detected.push('duplicate reference found');
     } else missing.push('reference');
     if (paymentDate) {
       record.payment_date = paymentDate;
       detected.push('date ' + paymentDate);
     }
-    if (accountId) {
-      record.payment_account_id = accountId;
-      const account = TF.state.accounts.find((row) => row.id === accountId);
-      detected.push('account ' + (account ? account.name : 'matched'));
+    if (accountMatch.id) {
+      record.payment_account_id = accountMatch.id;
+      const account = TF.state.accounts.find((row) => row.id === accountMatch.id);
+      detected.push('account ' + (account ? account.name : accountMatch.label) + ' (' + (accountMatch.confidence || 'matched') + ')');
+    } else if (accountMatch.label) {
+      missing.push('receiving account mapping');
     }
 
     record.ocr_status = detected.length ? 'done' : 'error';
@@ -781,9 +925,19 @@
     TF.$('aiApplyDefaultsBtn').addEventListener('click', applyDefaults);
     TF.$('aiSaveReadyBtn').addEventListener('click', saveAllReady);
     TF.$('aiOrdersList').addEventListener('input', handleInput);
-    TF.$('aiOrdersList').addEventListener('change', (event) => {
-      if (event.target.matches('[data-ai-proof]')) handleProof(event);
-      else handleInput(event);
+    TF.$('aiOrdersList').addEventListener('change', async (event) => {
+      if (event.target.matches('[data-ai-proof]')) {
+        await handleProof(event);
+        return;
+      }
+      handleInput(event);
+      if (event.target.dataset.aiField === 'payment_reference') {
+        const record = records.find((row) => row.id === event.target.dataset.id);
+        if (record && !record.saved) {
+          await checkPaymentReferenceDuplicate(record);
+          render();
+        }
+      }
     });
     TF.$('aiOrdersList').addEventListener('click', handleClick);
     render();
