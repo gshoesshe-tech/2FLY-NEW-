@@ -777,11 +777,14 @@
 
     record.duplicate_payment_checking = true;
     try {
+      // Narrow the lookup using the reference tail, then normalize client-side.
+      // This avoids downloading the entire payments table as order volume grows.
+      const tail = reference.slice(-6);
       const result = await TF.state.supa
         .from('payments')
         .select('order_id,reference_number,status,amount,payment_date')
-        .not('reference_number', 'is', null)
-        .limit(5000);
+        .ilike('reference_number', '%' + tail + '%')
+        .limit(100);
       if (result.error) throw result.error;
       const matches = (result.data || []).filter((payment) =>
         normalizePaymentReference(payment.reference_number) === reference
