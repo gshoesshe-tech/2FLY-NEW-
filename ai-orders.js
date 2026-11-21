@@ -7,6 +7,36 @@
   let savingBatch = false;
   const SAFE_TEST = new URLSearchParams(location.search).get('safe') === '1';
 
+  // GCash identifiers visible on the user's four QR/account screens.
+  // We resolve these clues to the live cash_accounts rows by account name,
+  // so no Supabase account UUID is hard-coded here.
+  const GCASH_ACCOUNT_CLUES = [
+    {
+      account_name: 'GCash Marian Isabelle Diaz',
+      mobile_prefixes: ['0946245'],
+      user_id_suffixes: ['9L3P8W'],
+      masked_name_patterns: [/MA\W*N\s+IS\W*E\s+D/i]
+    },
+    {
+      account_name: 'GCash Lorna D.',
+      mobile_prefixes: ['0912669', '63912669'],
+      user_id_suffixes: ['X3Y8UH'],
+      masked_name_patterns: [/LO\W*A\s+D/i]
+    },
+    {
+      account_name: 'GCash Monaliza V.',
+      mobile_prefixes: ['0960597'],
+      user_id_suffixes: ['8E50BK'],
+      masked_name_patterns: [/MO\W*A\s+V/i]
+    },
+    {
+      account_name: 'GCash Myra V.',
+      mobile_prefixes: ['0994983'],
+      user_id_suffixes: ['7WB1IW'],
+      masked_name_patterns: [/MY\W*A\s+V/i]
+    }
+  ];
+
   function representativeProduct(categoryId, preferredSku) {
     const preferred = TF.state.productByCode.get(String(preferredSku || '').toUpperCase());
     if (preferred && preferred.category_id === categoryId && preferred.active) return preferred;
@@ -92,6 +122,9 @@
       order_date: TF.today(),
       fulfillment: '',
       shipping_fee: '',
+      shipping_fee_source: '',
+      shipping_review_message: '',
+      shipping_warning: '',
       product_total: parsed.product_total || calculated,
       total_quantity: parsed.total_quantity || items.reduce((sum, item) => sum + TF.num(item.quantity), 0),
       items: items,
@@ -112,6 +145,9 @@
       ocr_reference: '',
       ocr_date: '',
       ocr_account_id: '',
+      ocr_account_confidence: '',
+      duplicate_payment_refs: [],
+      duplicate_payment_checking: false,
       duplicate_matches: [],
       allow_duplicate: false,
       saved: false,
@@ -127,12 +163,14 @@
     if (!record.items.length) list.push('No valid categories were detected.');
     if (!record.fulfillment) list.push('Choose fulfillment.');
     if (record.fulfillment === 'jnt' && String(record.shipping_fee).trim() === '') list.push('Enter the J&T shipping fee.');
+    if (record.shipping_review_message) list.push(record.shipping_review_message);
     if (record.payment_enabled) {
       if (TF.num(record.payment_amount) <= 0) list.push('Payment amount is required.');
       if (!record.payment_account_id) list.push('Select the receiving account.');
       if (record.payment_method === 'gcash' && !record.payment_reference.trim()) list.push('GCash reference number is required.');
       if (record.payment_method === 'gcash' && !record.payment_proof) list.push('GCash payment proof is required.');
       if (record.ocr_amount !== null && Math.abs(TF.num(record.ocr_amount) - expectedTotal(record)) > 0.02) list.push('Payment screenshot amount ' + TF.money(record.ocr_amount) + ' does not match expected ' + TF.money(expectedTotal(record)) + '.');
+      if (record.duplicate_payment_refs.length) list.push('This GCash reference number is already used on another payment.');
     }
     if (record.duplicate_matches.length && !record.allow_duplicate) list.push('Possible duplicate needs confirmation.');
     return list;
@@ -166,8 +204,15 @@
     const shippingValue = record.fulfillment === 'jnt' ? record.shipping_fee : '0';
     const expected = expectedTotal(record);
     const paymentAmount = record.payment_amount_auto ? expected : TF.num(record.payment_amount);
-    const warningHtml = record.warnings.length
-      ? '<div class="notice warn ai-card-warning">' + record.warnings.map((x) => '• ' + TF.esc(x)).join('<br>') + '</div>'
+    const dynamicWarnings = [...record.warnings];
+    if (record.shipping_warning) dynamicWarnings.push(record.shipping_warning);
+    const warningHtml = dynamicWarnings.length
+      ? '<div class="notice warn ai-card-warning">' + dynamicWarnings.map((x) => '• ' + TF.esc(x)).join('<br>') + '</div>'
+      : '';
+    const duplicatePaymentHtml = record.duplicate_payment_refs.length
+      ? '<div class="notice danger ai-card-warning"><strong>Duplicate GCash reference.</strong><br>' +
+          record.duplicate_payment_refs.map((x) => TF.esc((x.order_number ? x.order_number + ' — ' : '') + (x.status || 'payment') + ' — ' + TF.money(x.amount || 0) + ' — ' + (x.payment_date || ''))).join('<br>') +
+        '</div>'
       : '';
     const duplicateHtml = record.duplicate_matches.length
       ? '<div class="notice danger ai-card-warning"><strong>Possible duplicate found.</strong><br>' +
@@ -208,8 +253,12 @@
         '<div class="ai-money-grid">' +
           '<div><span>Product total</span><strong>' + TF.money(record.product_total) + '</strong></div>' +
           '<label class="' + (record.fulfillment === 'jnt' && String(record.shipping_fee).trim() === '' ? 'field-attention' : '') + '">Customer shipping fee' +
-            '<input type="number" min="0" step="0.01" placeholder="' + (record.fulfillment === 'jnt' ? 'Required for J&T' : '₱0') + '" data-ai-field="shipping_fee" data-id="' + record.id + '" value="' + TF.esc(shippingValue) + '"' + (shippingDisabled || record.saved ? ' disabled' : '') + '>' +
-            '<small>' + (record.fulfillment === 'jnt' ? 'Enter what the customer paid for shipping.' : record.fulfillment ? fulfillmentLabel(record.fulfillment) + ': customer shipping charge is ₱0.' : 'Choose fulfillment first.') + '</small>' +
+            '<input type="number" min="0" step="0.01" placeholder="' + (record.fulfillment === 'jnt' ? 'Auto from payment proof' : '₱0') + '" data-ai-field="shipping_fee" data-id="' + record.id + '" value="' + TF.esc(shippingValue) + '"' + (shippingDisabled || record.saved ? ' disabled' : '') + '>' +
+            '<small>' + (record.fulfillment === 'jnt'
+              ? (record.shipping_fee_source === 'payment'
+                ? 'Auto-calculated from payment: amount sent − product total.'
+                : 'Upload the payment proof to calculate shipping automatically, or enter it manually.')
+              : record.fulfillment ? fulfillmentLabel(record.fulfillment) + ': customer shipping charge is ₱0.' : 'Choose fulfillment first.') + '</small>' +
           '</label>' +
           '<div><span>Expected customer total</span><strong data-expected-total>' + TF.money(expected) + '</strong></div>' +
         '</div>' +
@@ -228,7 +277,7 @@
           '</div>' : '<p class="muted">If left off, this order will be saved as Awaiting Payment. You can submit the payment later from Orders.</p>') +
         '</section>' +
 
-        warningHtml + duplicateHtml +
+        warningHtml + duplicatePaymentHtml + duplicateHtml +
         '<div class="notice danger' + (currentIssues.length ? '' : ' hidden') + '" data-card-issues>' + currentIssues.map((x) => '• ' + TF.esc(x)).join('<br>') + '</div>' +
         (record.save_error ? '<div class="notice danger">' + TF.esc(record.save_error) + '</div>' : '') +
         '<div class="ai-card-actions">' +
