@@ -7,6 +7,36 @@
   let savingBatch = false;
   const SAFE_TEST = new URLSearchParams(location.search).get('safe') === '1';
 
+  // GCash identifiers visible on the user's four QR/account screens.
+  // We resolve these clues to the live cash_accounts rows by account name,
+  // so no Supabase account UUID is hard-coded here.
+  const GCASH_ACCOUNT_CLUES = [
+    {
+      account_name: 'GCash Marian Isabelle Diaz',
+      mobile_prefixes: ['0946245'],
+      user_id_suffixes: ['9L3P8W'],
+      masked_name_patterns: [/MA\W*N\s+IS\W*E\s+D/i]
+    },
+    {
+      account_name: 'GCash Lorna D.',
+      mobile_prefixes: ['0912669', '63912669'],
+      user_id_suffixes: ['X3Y8UH'],
+      masked_name_patterns: [/LO\W*A\s+D/i]
+    },
+    {
+      account_name: 'GCash Monaliza V.',
+      mobile_prefixes: ['0960597'],
+      user_id_suffixes: ['8E50BK'],
+      masked_name_patterns: [/MO\W*A\s+V/i]
+    },
+    {
+      account_name: 'GCash Myra V.',
+      mobile_prefixes: ['0994983'],
+      user_id_suffixes: ['7WB1IW'],
+      masked_name_patterns: [/MY\W*A\s+V/i]
+    }
+  ];
+
   function representativeProduct(categoryId, preferredSku) {
     const preferred = TF.state.productByCode.get(String(preferredSku || '').toUpperCase());
     if (preferred && preferred.category_id === categoryId && preferred.active) return preferred;
@@ -92,6 +122,9 @@
       order_date: TF.today(),
       fulfillment: '',
       shipping_fee: '',
+      shipping_fee_source: '',
+      shipping_review_message: '',
+      shipping_warning: '',
       product_total: parsed.product_total || calculated,
       total_quantity: parsed.total_quantity || items.reduce((sum, item) => sum + TF.num(item.quantity), 0),
       items: items,
@@ -112,6 +145,9 @@
       ocr_reference: '',
       ocr_date: '',
       ocr_account_id: '',
+      ocr_account_confidence: '',
+      duplicate_payment_refs: [],
+      duplicate_payment_checking: false,
       duplicate_matches: [],
       allow_duplicate: false,
       saved: false,
@@ -127,12 +163,14 @@
     if (!record.items.length) list.push('No valid categories were detected.');
     if (!record.fulfillment) list.push('Choose fulfillment.');
     if (record.fulfillment === 'jnt' && String(record.shipping_fee).trim() === '') list.push('Enter the J&T shipping fee.');
+    if (record.shipping_review_message) list.push(record.shipping_review_message);
     if (record.payment_enabled) {
       if (TF.num(record.payment_amount) <= 0) list.push('Payment amount is required.');
       if (!record.payment_account_id) list.push('Select the receiving account.');
       if (record.payment_method === 'gcash' && !record.payment_reference.trim()) list.push('GCash reference number is required.');
       if (record.payment_method === 'gcash' && !record.payment_proof) list.push('GCash payment proof is required.');
       if (record.ocr_amount !== null && Math.abs(TF.num(record.ocr_amount) - expectedTotal(record)) > 0.02) list.push('Payment screenshot amount ' + TF.money(record.ocr_amount) + ' does not match expected ' + TF.money(expectedTotal(record)) + '.');
+      if (record.duplicate_payment_refs.length) list.push('This GCash reference number is already used on another payment.');
     }
     if (record.duplicate_matches.length && !record.allow_duplicate) list.push('Possible duplicate needs confirmation.');
     return list;
@@ -166,8 +204,15 @@
     const shippingValue = record.fulfillment === 'jnt' ? record.shipping_fee : '0';
     const expected = expectedTotal(record);
     const paymentAmount = record.payment_amount_auto ? expected : TF.num(record.payment_amount);
-    const warningHtml = record.warnings.length
-      ? '<div class="notice warn ai-card-warning">' + record.warnings.map((x) => '• ' + TF.esc(x)).join('<br>') + '</div>'
+    const dynamicWarnings = [...record.warnings];
+    if (record.shipping_warning) dynamicWarnings.push(record.shipping_warning);
+    const warningHtml = dynamicWarnings.length
+      ? '<div class="notice warn ai-card-warning">' + dynamicWarnings.map((x) => '• ' + TF.esc(x)).join('<br>') + '</div>'
+      : '';
+    const duplicatePaymentHtml = record.duplicate_payment_refs.length
+      ? '<div class="notice danger ai-card-warning"><strong>Duplicate GCash reference.</strong><br>' +
+          record.duplicate_payment_refs.map((x) => TF.esc((x.order_number ? x.order_number + ' — ' : '') + (x.status || 'payment') + ' — ' + TF.money(x.amount || 0) + ' — ' + (x.payment_date || ''))).join('<br>') +
+        '</div>'
       : '';
     const duplicateHtml = record.duplicate_matches.length
       ? '<div class="notice danger ai-card-warning"><strong>Possible duplicate found.</strong><br>' +
@@ -208,17 +253,21 @@
         '<div class="ai-money-grid">' +
           '<div><span>Product total</span><strong>' + TF.money(record.product_total) + '</strong></div>' +
           '<label class="' + (record.fulfillment === 'jnt' && String(record.shipping_fee).trim() === '' ? 'field-attention' : '') + '">Customer shipping fee' +
-            '<input type="number" min="0" step="0.01" placeholder="' + (record.fulfillment === 'jnt' ? 'Required for J&T' : '₱0') + '" data-ai-field="shipping_fee" data-id="' + record.id + '" value="' + TF.esc(shippingValue) + '"' + (shippingDisabled || record.saved ? ' disabled' : '') + '>' +
-            '<small>' + (record.fulfillment === 'jnt' ? 'Enter what the customer paid for shipping.' : record.fulfillment ? fulfillmentLabel(record.fulfillment) + ': customer shipping charge is ₱0.' : 'Choose fulfillment first.') + '</small>' +
+            '<input type="number" min="0" step="0.01" placeholder="' + (record.fulfillment === 'jnt' ? 'Auto from payment proof' : '₱0') + '" data-ai-field="shipping_fee" data-id="' + record.id + '" value="' + TF.esc(shippingValue) + '"' + (shippingDisabled || record.saved ? ' disabled' : '') + '>' +
+            '<small>' + (record.fulfillment === 'jnt'
+              ? (record.shipping_fee_source === 'payment'
+                ? 'Auto-calculated from payment: amount sent − product total.'
+                : 'Upload the payment proof to calculate shipping automatically, or enter it manually.')
+              : record.fulfillment ? fulfillmentLabel(record.fulfillment) + ': customer shipping charge is ₱0.' : 'Choose fulfillment first.') + '</small>' +
           '</label>' +
           '<div><span>Expected customer total</span><strong data-expected-total>' + TF.money(expected) + '</strong></div>' +
         '</div>' +
 
         '<section class="ai-payment-box">' +
-          '<div class="ai-payment-heading"><div><strong>Payment proof</strong><small>Upload the customer payment screenshot here. Payment stays For Verification.</small></div></div>' +
+          '<div class="ai-payment-heading"><div><strong>Payment proof</strong><small>Upload the GCash screenshot. 2FLY will read the amount, reference, date and receiving account, then calculate J&T shipping from the amount paid.</small></div></div>' +
           '<label class="ai-payment-toggle"><input type="checkbox" data-ai-field="payment_enabled" data-id="' + record.id + '"' + (record.payment_enabled ? ' checked' : '') + (record.saved ? ' disabled' : '') + '> <strong>Submit payment for verification with this order</strong></label>' +
           (record.payment_enabled ? '<div class="ai-order-grid ai-payment-fields">' +
-            '<label class="span-2 ai-proof-upload">Upload GCash screenshot / payment proof<input type="file" accept="image/*" data-ai-proof data-id="' + record.id + '"' + (record.saved ? ' disabled' : '') + '><small>' + (record.payment_proof ? TF.esc(record.payment_proof.name) + ' selected' : 'Upload the customer payment screenshot here. It will still require verification.') + '</small></label>' +
+            '<label class="span-2 ai-proof-upload">Upload GCash screenshot / payment proof<input type="file" accept="image/*" data-ai-proof data-id="' + record.id + '"' + (record.saved ? ' disabled' : '') + '><small>' + (record.payment_proof ? TF.esc(record.payment_proof.name) + ' selected' : 'Upload the customer GCash screenshot. Payment still requires verification.') + '</small></label>' +
             '<div class="span-2">' + ocrHtml + '</div>' +
             '<label>Amount sent<input type="number" min="0" step="0.01" data-ai-field="payment_amount" data-id="' + record.id + '" value="' + TF.num(paymentAmount).toFixed(2) + '"' + (record.saved ? ' disabled' : '') + '></label>' +
             '<label>Reference number<input data-ai-field="payment_reference" data-id="' + record.id + '" value="' + TF.esc(record.payment_reference) + '" placeholder="GCash reference"' + (record.saved ? ' disabled' : '') + '></label>' +
@@ -228,7 +277,7 @@
           '</div>' : '<p class="muted">If left off, this order will be saved as Awaiting Payment. You can submit the payment later from Orders.</p>') +
         '</section>' +
 
-        warningHtml + duplicateHtml +
+        warningHtml + duplicatePaymentHtml + duplicateHtml +
         '<div class="notice danger' + (currentIssues.length ? '' : ' hidden') + '" data-card-issues>' + currentIssues.map((x) => '• ' + TF.esc(x)).join('<br>') + '</div>' +
         (record.save_error ? '<div class="notice danger">' + TF.esc(record.save_error) + '</div>' : '') +
         '<div class="ai-card-actions">' +
@@ -367,6 +416,14 @@
     if (currentIssues.length) {
       render();
       return false;
+    }
+
+    if (record.payment_enabled && record.payment_method === 'gcash' && record.payment_reference.trim()) {
+      await checkPaymentReferenceDuplicate(record);
+      if (record.duplicate_payment_refs.length) {
+        render();
+        return false;
+      }
     }
 
     const fingerprint = await TF.sha256(record.raw);
@@ -509,19 +566,35 @@
 
     record[field] = event.target.value;
     if (field === 'fulfillment') {
-      if (record.fulfillment !== 'jnt') record.shipping_fee = '0';
-      else if (record.shipping_fee === '0') record.shipping_fee = '';
+      if (record.ocr_amount !== null) applyPaymentAmountToShipping(record, record.ocr_amount);
+      else if (record.fulfillment !== 'jnt') {
+        record.shipping_fee = '0';
+        record.shipping_fee_source = 'fulfillment';
+        record.shipping_review_message = '';
+      } else if (record.shipping_fee === '0') {
+        record.shipping_fee = '';
+        record.shipping_fee_source = '';
+      }
       if (record.payment_amount_auto) record.payment_amount = expectedTotal(record);
       render();
       return;
     }
     if (field === 'shipping_fee') {
+      record.shipping_fee_source = 'manual';
+      record.shipping_review_message = '';
+      record.shipping_warning = '';
       if (record.payment_amount_auto) record.payment_amount = expectedTotal(record);
       refreshDerived(record);
       return;
     }
     if (field === 'payment_amount') {
       record.payment_amount_auto = false;
+      if (record.fulfillment === 'jnt') applyPaymentAmountToShipping(record, record.payment_amount);
+      refreshDerived(record);
+      return;
+    }
+    if (field === 'payment_reference') {
+      record.duplicate_payment_refs = [];
       refreshDerived(record);
       return;
     }
@@ -598,16 +671,132 @@
   }
 
   function extractOcrAccount(text) {
-    const normalizedText = String(text || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-    const matches = [];
-    for (const account of TF.state.accounts) {
-      const candidates = [account.name, account.account_name, account.phone, account.mobile_number, account.account_number]
-        .filter(Boolean)
-        .map((value) => String(value).toLowerCase().replace(/[^a-z0-9]/g, ''))
-        .filter((value) => value.length >= 5);
-      if (candidates.some((value) => normalizedText.includes(value))) matches.push(account.id);
+    return matchGcashAccount(text);
+  }
+
+
+  function normalizeIdentifier(value) {
+    return String(value || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+  }
+
+  function resolveCashAccountId(accountName) {
+    const wanted = normalizeIdentifier(accountName);
+    const match = TF.state.accounts.find((account) => {
+      const live = normalizeIdentifier(account.name);
+      return live === wanted || live.startsWith(wanted) || wanted.startsWith(live);
+    });
+    return match ? match.id : '';
+  }
+
+  function matchGcashAccount(text) {
+    const raw = String(text || '');
+    const compact = normalizeIdentifier(raw);
+    const digitText = raw.replace(/\D/g, '');
+    const scored = GCASH_ACCOUNT_CLUES.map((clue) => {
+      let score = 0;
+      const matched = [];
+      for (const suffix of clue.user_id_suffixes) {
+        if (compact.includes(normalizeIdentifier(suffix))) {
+          score += 100;
+          matched.push('User ID');
+          break;
+        }
+      }
+      for (const prefix of clue.mobile_prefixes) {
+        if (digitText.includes(String(prefix).replace(/\D/g, ''))) {
+          score += 80;
+          matched.push('mobile');
+          break;
+        }
+      }
+      if (clue.masked_name_patterns.some((pattern) => pattern.test(raw))) {
+        score += 30;
+        matched.push('masked name');
+      }
+      return { clue, score, matched };
+    }).filter((row) => row.score > 0).sort((a, b) => b.score - a.score);
+
+    if (!scored.length) return { id: '', confidence: '', label: '', matched: [] };
+    if (scored.length > 1 && scored[0].score === scored[1].score) return { id: '', confidence: '', label: '', matched: [] };
+
+    const winner = scored[0];
+    const id = resolveCashAccountId(winner.clue.account_name);
+    if (!id) return { id: '', confidence: '', label: winner.clue.account_name, matched: winner.matched };
+    return {
+      id,
+      label: winner.clue.account_name,
+      matched: winner.matched,
+      confidence: winner.score >= 80 ? 'high' : 'medium'
+    };
+  }
+
+  function roundMoney(value) {
+    return Math.round((TF.num(value) + Number.EPSILON) * 100) / 100;
+  }
+
+  function applyPaymentAmountToShipping(record, amount) {
+    record.shipping_warning = '';
+    record.shipping_review_message = '';
+
+    if (record.fulfillment !== 'jnt') {
+      record.shipping_fee = '0';
+      record.shipping_fee_source = 'fulfillment';
+      return;
     }
-    return matches.length === 1 ? matches[0] : '';
+
+    const difference = roundMoney(TF.num(amount) - TF.num(record.product_total));
+    if (difference < 0) {
+      record.shipping_fee = '';
+      record.shipping_fee_source = '';
+      record.shipping_review_message = 'Payment is ' + TF.money(Math.abs(difference)) + ' below the product total. Do not calculate a negative shipping fee.';
+      return;
+    }
+
+    record.shipping_fee = difference.toFixed(2);
+    record.shipping_fee_source = 'payment';
+
+    if (difference === 0) {
+      record.shipping_review_message = 'J&T shipping calculated as ₱0. Review this order before saving.';
+      return;
+    }
+
+    const productTotal = Math.max(1, TF.num(record.product_total));
+    if (difference >= 1500 || difference / productTotal >= 0.25) {
+      record.shipping_warning = 'Calculated J&T shipping is ' + TF.money(difference) + ', which is unusually high. Please review.';
+    }
+  }
+
+  function normalizePaymentReference(value) {
+    return normalizeIdentifier(value);
+  }
+
+  async function checkPaymentReferenceDuplicate(record) {
+    const reference = normalizePaymentReference(record.payment_reference);
+    record.duplicate_payment_refs = [];
+    if (!reference || reference.length < 6) return [];
+
+    record.duplicate_payment_checking = true;
+    try {
+      // Narrow the lookup using the reference tail, then normalize client-side.
+      // This avoids downloading the entire payments table as order volume grows.
+      const tail = reference.slice(-6);
+      const result = await TF.state.supa
+        .from('v_payment_verification_queue_v16')
+        .select('payment_id,order_id,reference_number,status,amount,payment_date')
+        .ilike('reference_number', '%' + tail + '%')
+        .limit(100);
+      if (result.error) throw result.error;
+      const matches = (result.data || []).filter((payment) =>
+        normalizePaymentReference(payment.reference_number) === reference
+      );
+      record.duplicate_payment_refs = matches;
+      return matches;
+    } catch (error) {
+      console.warn('Payment reference duplicate check skipped:', error);
+      return [];
+    } finally {
+      record.duplicate_payment_checking = false;
+    }
   }
 
   function updateOcrStatus(record, message, progress) {
@@ -647,32 +836,39 @@
     const amount = extractOcrAmount(text, expectedTotal(record));
     const reference = extractOcrReference(text);
     const paymentDate = extractOcrDate(text);
-    const accountId = extractOcrAccount(text);
+    const accountMatch = extractOcrAccount(text);
 
     record.ocr_amount = amount;
     record.ocr_reference = reference;
     record.ocr_date = paymentDate;
-    record.ocr_account_id = accountId;
+    record.ocr_account_id = accountMatch.id || '';
+    record.ocr_account_confidence = accountMatch.confidence || '';
 
     const detected = [];
     const missing = [];
     if (amount !== null) {
       record.payment_amount = amount;
       record.payment_amount_auto = false;
+      applyPaymentAmountToShipping(record, amount);
       detected.push('amount ' + TF.money(amount));
+      if (record.fulfillment === 'jnt' && record.shipping_fee_source === 'payment') detected.push('shipping ' + TF.money(record.shipping_fee));
     } else missing.push('amount');
     if (reference) {
       record.payment_reference = reference;
       detected.push('reference ' + reference);
+      await checkPaymentReferenceDuplicate(record);
+      if (record.duplicate_payment_refs.length) detected.push('duplicate reference found');
     } else missing.push('reference');
     if (paymentDate) {
       record.payment_date = paymentDate;
       detected.push('date ' + paymentDate);
     }
-    if (accountId) {
-      record.payment_account_id = accountId;
-      const account = TF.state.accounts.find((row) => row.id === accountId);
-      detected.push('account ' + (account ? account.name : 'matched'));
+    if (accountMatch.id) {
+      record.payment_account_id = accountMatch.id;
+      const account = TF.state.accounts.find((row) => row.id === accountMatch.id);
+      detected.push('account ' + (account ? account.name : accountMatch.label) + ' (' + (accountMatch.confidence || 'matched') + ')');
+    } else if (accountMatch.label) {
+      missing.push('receiving account mapping');
     }
 
     record.ocr_status = detected.length ? 'done' : 'error';
@@ -732,9 +928,19 @@
     TF.$('aiApplyDefaultsBtn').addEventListener('click', applyDefaults);
     TF.$('aiSaveReadyBtn').addEventListener('click', saveAllReady);
     TF.$('aiOrdersList').addEventListener('input', handleInput);
-    TF.$('aiOrdersList').addEventListener('change', (event) => {
-      if (event.target.matches('[data-ai-proof]')) handleProof(event);
-      else handleInput(event);
+    TF.$('aiOrdersList').addEventListener('change', async (event) => {
+      if (event.target.matches('[data-ai-proof]')) {
+        await handleProof(event);
+        return;
+      }
+      handleInput(event);
+      if (event.target.dataset.aiField === 'payment_reference') {
+        const record = records.find((row) => row.id === event.target.dataset.id);
+        if (record && !record.saved) {
+          await checkPaymentReferenceDuplicate(record);
+          render();
+        }
+      }
     });
     TF.$('aiOrdersList').addEventListener('click', handleClick);
     render();
