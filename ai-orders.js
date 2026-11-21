@@ -781,8 +781,8 @@
       // This avoids downloading the entire payments table as order volume grows.
       const tail = reference.slice(-6);
       const result = await TF.state.supa
-        .from('payments')
-        .select('order_id,reference_number,status,amount,payment_date')
+        .from('v_payment_verification_queue_v16')
+        .select('payment_id,order_id,reference_number,status,amount,payment_date')
         .ilike('reference_number', '%' + tail + '%')
         .limit(100);
       if (result.error) throw result.error;
