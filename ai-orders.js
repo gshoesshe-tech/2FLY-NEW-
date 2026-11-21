@@ -264,10 +264,10 @@
         '</div>' +
 
         '<section class="ai-payment-box">' +
-          '<div class="ai-payment-heading"><div><strong>Payment proof</strong><small>Upload the customer payment screenshot here. Payment stays For Verification.</small></div></div>' +
+          '<div class="ai-payment-heading"><div><strong>Payment proof</strong><small>Upload the GCash screenshot. 2FLY will read the amount, reference, date and receiving account, then calculate J&T shipping from the amount paid.</small></div></div>' +
           '<label class="ai-payment-toggle"><input type="checkbox" data-ai-field="payment_enabled" data-id="' + record.id + '"' + (record.payment_enabled ? ' checked' : '') + (record.saved ? ' disabled' : '') + '> <strong>Submit payment for verification with this order</strong></label>' +
           (record.payment_enabled ? '<div class="ai-order-grid ai-payment-fields">' +
-            '<label class="span-2 ai-proof-upload">Upload GCash screenshot / payment proof<input type="file" accept="image/*" data-ai-proof data-id="' + record.id + '"' + (record.saved ? ' disabled' : '') + '><small>' + (record.payment_proof ? TF.esc(record.payment_proof.name) + ' selected' : 'Upload the customer payment screenshot here. It will still require verification.') + '</small></label>' +
+            '<label class="span-2 ai-proof-upload">Upload GCash screenshot / payment proof<input type="file" accept="image/*" data-ai-proof data-id="' + record.id + '"' + (record.saved ? ' disabled' : '') + '><small>' + (record.payment_proof ? TF.esc(record.payment_proof.name) + ' selected' : 'Upload the customer GCash screenshot. Payment still requires verification.') + '</small></label>' +
             '<div class="span-2">' + ocrHtml + '</div>' +
             '<label>Amount sent<input type="number" min="0" step="0.01" data-ai-field="payment_amount" data-id="' + record.id + '" value="' + TF.num(paymentAmount).toFixed(2) + '"' + (record.saved ? ' disabled' : '') + '></label>' +
             '<label>Reference number<input data-ai-field="payment_reference" data-id="' + record.id + '" value="' + TF.esc(record.payment_reference) + '" placeholder="GCash reference"' + (record.saved ? ' disabled' : '') + '></label>' +
