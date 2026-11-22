@@ -209,7 +209,7 @@
     const nav = document.querySelector('.sidebar nav');
     if (!nav) return;
     const links = [
-      ['dashboard', './dashboard.html', 'Dashboard', true],
+      ['dashboard', './dashboard.html', 'Dashboard', isManagement()],
       ['product-sales', './product-sales.html', 'Product Sales', can('view_daily_summary') || isManagement()],
       ['new-order', './new-order.html', 'New Order', can('create_orders')],
       ['ai-orders', './ai-orders.html', 'AI Order Intake', can('create_orders')],
@@ -278,19 +278,28 @@
     });
   }
 
+  function defaultLandingPage() {
+    if (isManagement()) return './dashboard.html';
+    if (can('create_orders')) return './new-order.html';
+    if (can('edit_orders') || can('confirm_payments')) return './orderpage.html';
+    if (can('update_tracking')) return './tracking.html';
+    if (can('view_daily_summary')) return './daily.html';
+    return './todo.html';
+  }
+
   function enforcePageAccess() {
     const required = document.body.dataset.requiredRole || 'team';
     if (required === 'management' && !isManagement()) {
-      location.replace('./dashboard.html');
+      location.replace(defaultLandingPage());
       return false;
     }
     if (required === 'owner' && !isOwner()) {
-      location.replace('./dashboard.html');
+      location.replace(defaultLandingPage());
       return false;
     }
     const permission = document.body.dataset.requiredPermission;
     if (permission && !can(permission)) {
-      location.replace('./dashboard.html');
+      location.replace(defaultLandingPage());
       return false;
     }
     return true;
