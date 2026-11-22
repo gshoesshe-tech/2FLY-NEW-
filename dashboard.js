@@ -265,6 +265,9 @@
   }
 
   TF.ready.then(async () => {
+    // Defense in depth: common.js already redirects non-management users,
+    // but do not start any financial dashboard queries for staff while navigation changes.
+    if (!TF.isManagement()) return;
     updateFilterUi();
     TF.$('dashboardPreset').addEventListener('change', () => { updateFilterUi(); if (TF.$('dashboardPreset').value !== 'custom') render(); });
     TF.$('dashboardDateBasis').addEventListener('change', render);
