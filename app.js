@@ -837,27 +837,65 @@
     updateBulkBar();
   }
 
+  async function fetchAllRows(table, columns, options = {}) {
+    const pageSize = 1000;
+    const rows = [];
+    for (let from = 0; from < 200000; from += pageSize) {
+      let query = TF.state.supa.from(table).select(columns);
+      if (options.eq) {
+        for (const [column, value] of Object.entries(options.eq)) query = query.eq(column, value);
+      }
+      if (options.order) {
+        for (const rule of options.order) query = query.order(rule.column, { ascending: rule.ascending });
+      }
+      const result = await query.range(from, from + pageSize - 1);
+      if (result.error) throw result.error;
+      const page = result.data || [];
+      rows.push(...page);
+      if (page.length < pageSize) break;
+    }
+    return rows;
+  }
+
   async function loadOrders() {
     const params = new URLSearchParams(location.search);
     const editId = params.get('edit');
     const openId = params.get('open');
     const needsData = isListPage() || Boolean(editId) || Boolean(openId) || has('orderDialog');
     if (!needsData) return;
-    const [ordersResult, paymentsResult, itemsResult] = await Promise.all([
-      TF.state.supa.from('v_daily_ops_orders_v16').select('*').order('order_date', { ascending: false }).order('created_at', { ascending: false }).limit(10000),
-      TF.state.supa.from('payments').select('order_id,payment_date,status').eq('status', 'verified').order('payment_date', { ascending: true }).limit(30000),
-      TF.state.supa.from('order_items').select('order_id,category_id,product_name,sku,quantity').limit(50000)
+    const [orderRows, paymentRows, itemRows] = await Promise.all([
+      fetchAllRows('v_daily_ops_orders_v16', '*', {
+        order: [
+          { column: 'order_date', ascending: false },
+          { column: 'created_at', ascending: false }
+        ]
+      }),
+      fetchAllRows('payments', 'order_id,payment_date,status', {
+        eq: { status: 'verified' },
+        order: [{ column: 'payment_date', ascending: true }]
+      }),
+      fetchAllRows('order_items', 'order_id,category_id,product_name,sku,quantity', {
+        order: [
+          { column: 'order_id', ascending: true },
+          { column: 'line_number', ascending: true }
+        ]
+      })
     ]);
-    if (ordersResult.error || paymentsResult.error || itemsResult.error) throw ordersResult.error || paymentsResult.error || itemsResult.error;
-    orders = ordersResult.data || [];
+    orders = orderRows;
+    if (has('ordersDataCoverage')) {
+      const dates = orders.map((order) => TF.isoDate(order.order_date)).filter(Boolean).sort();
+      TF.$('ordersDataCoverage').textContent = dates.length
+        ? orders.length.toLocaleString() + ' loaded • ' + TF.formatDate(dates[0]) + ' → ' + TF.formatDate(dates[dates.length - 1])
+        : 'No order dates loaded';
+    }
     orderItemsByOrder = new Map();
-    (itemsResult.data || []).forEach((item) => {
+    itemRows.forEach((item) => {
       const current = orderItemsByOrder.get(item.order_id) || [];
       current.push(item);
       orderItemsByOrder.set(item.order_id, current);
     });
     paymentDatesByOrder = new Map();
-    (paymentsResult.data || []).forEach((payment) => {
+    paymentRows.forEach((payment) => {
       const dates = paymentDatesByOrder.get(payment.order_id) || [];
       if (!dates.includes(payment.payment_date)) dates.push(payment.payment_date);
       paymentDatesByOrder.set(payment.order_id, dates.sort());
