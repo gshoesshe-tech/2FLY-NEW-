@@ -620,3 +620,7 @@ body[data-page="orders"] .order-filter-panel{grid-template-columns:repeat(5,minm
   .ai-intake-kpis,.ai-batch-tools-grid,.ai-order-grid{grid-template-columns:1fr}
   .ai-order-grid .span-2{grid-column:span 1}
 }
+
+
+.order-count-meta{display:flex;align-items:flex-end;gap:8px;flex-direction:column}
+@media(max-width:640px){.order-count-meta{align-items:flex-start}}
