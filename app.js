@@ -882,6 +882,12 @@
       })
     ]);
     orders = orderRows;
+    if (has('ordersDataCoverage')) {
+      const dates = orders.map((order) => TF.isoDate(order.order_date)).filter(Boolean).sort();
+      TF.$('ordersDataCoverage').textContent = dates.length
+        ? orders.length.toLocaleString() + ' loaded • ' + TF.formatDate(dates[0]) + ' → ' + TF.formatDate(dates[dates.length - 1])
+        : 'No order dates loaded';
+    }
     orderItemsByOrder = new Map();
     itemRows.forEach((item) => {
       const current = orderItemsByOrder.get(item.order_id) || [];
