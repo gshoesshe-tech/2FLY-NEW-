@@ -23,7 +23,7 @@
     <header class="topbar">
       <div>
         <h2>Product Sales</h2>
-        <p>Quick visual of how many pieces were sold per category on a selected day.</p>
+        <p>See what sold by category and exact design, then use the restock list for tomorrow's buying.</p>
       </div>
       <div class="top-actions"><button id="refreshBtn" class="btn">Refresh</button></div>
     </header>
@@ -41,8 +41,8 @@
       <section class="kpi-grid four">
         <article class="kpi"><span>Pieces sold</span><strong id="psPieces">0</strong></article>
         <article class="kpi"><span>Paid orders</span><strong id="psOrders">0</strong></article>
-        <article class="kpi"><span>Categories sold</span><strong id="psCategories">0</strong></article>
         <article class="kpi"><span>Top category</span><strong id="psTop">—</strong></article>
+        <article class="kpi"><span>Top design</span><strong id="psTopDesign">—</strong></article>
       </section>
 
       <article class="card">
@@ -55,6 +55,30 @@
         <div class="card-body">
           <div id="productSalesCards" class="product-sales-category-grid"></div>
         </div>
+      </article>
+
+      <article class="card">
+        <div class="card-head">
+          <div>
+            <h3>Tomorrow Buy List</h3>
+            <p>Ranked by pieces sold on the selected day, then the last 7 and 30 days. Use this as your restock priority.</p>
+          </div>
+          <span class="pill" id="restockCoverage">Reading design history…</span>
+        </div>
+        <div class="table-wrap" id="restockPriorityTable"></div>
+      </article>
+
+      <article class="card">
+        <div class="card-head">
+          <div>
+            <h3>Design sales</h3>
+            <p>Exact SKU/design lines recovered from the original website order forms. Size breakdown appears when available.</p>
+          </div>
+          <label class="product-sales-design-filter">Category
+            <select id="designCategoryFilter"><option value="all">All categories</option></select>
+          </label>
+        </div>
+        <div class="table-wrap" id="designSalesTable"></div>
       </article>
 
       <article class="card">
