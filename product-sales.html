@@ -9,6 +9,7 @@
   <script src="./config.js"></script>
   <script defer src="./common.js"></script>
   <script defer src="./product-sales.js"></script>
+  <script defer src="./restock-intelligence.js"></script>
 </head>
 <body data-page="product-sales" data-required-role="team" data-required-permission="view_daily_summary">
 <div id="toast" class="toast"></div>
@@ -44,6 +45,7 @@
         <article class="kpi"><span>Top category</span><strong id="psTop">—</strong></article>
         <article class="kpi"><span>Top design</span><strong id="psTopDesign">—</strong></article>
       </section>
+      <span id="psCategories" class="hidden">0</span>
 
       <article class="card">
         <div class="card-head">
@@ -63,7 +65,7 @@
             <h3>Tomorrow Buy List</h3>
             <p>Ranked by pieces sold on the selected day, then the last 7 and 30 days. Use this as your restock priority.</p>
           </div>
-          <span class="pill" id="restockCoverage">Reading design history…</span>
+          <div><span class="pill" id="restockCoverage">Reading design history…</span> <button class="btn primary small" id="copyRestockBtn" type="button">Copy Buy List</button></div>
         </div>
         <div class="table-wrap" id="restockPriorityTable"></div>
       </article>
