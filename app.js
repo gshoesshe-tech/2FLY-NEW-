@@ -91,6 +91,28 @@
     return `<a class="btn small" href="${TF.esc(url)}" target="_blank" rel="noopener noreferrer">${TF.esc(label)}</a>`;
   }
 
+  function isBusinessBundleLabel(value) {
+    const label = TF.normalizeCategoryLabel(value);
+    return label === 'BUSINESS BUNDLE' || label === 'BUSINESS BUNDLES';
+  }
+
+  function brandedShirtsCategory() {
+    return TF.state.categories.find((category) =>
+      category.code === 'BRANDED_SHIRTS' ||
+      TF.normalizeCategoryLabel(category.name) === 'BRANDED SHIRTS'
+    ) || TF.state.aliasToCategory.get('BRANDED SHIRTS') || null;
+  }
+
+  function expandedBundleQuantity(group) {
+    const lines = group.items || [];
+    if (!lines.length) return TF.num(group.quantity) * 10;
+    return lines.reduce((sum, item) => {
+      const sku = String(item.sku || '').toUpperCase();
+      const piecesPerBundle = sku === 'FP20' ? 20 : 10;
+      return sum + TF.num(item.quantity) * piecesPerBundle;
+    }, 0);
+  }
+
   function representativeProduct(categoryId, preferredSku = '') {
     const preferred = TF.state.productByCode.get(String(preferredSku || '').toUpperCase());
     if (preferred && preferred.category_id === categoryId) return preferred;
@@ -180,26 +202,33 @@
 
     const groupedCategories = new Map();
     groups.forEach((group) => {
-      const category = TF.state.aliasToCategory.get(group.label);
+      const bundleGroup = isBusinessBundleLabel(group.label);
+      const category = bundleGroup ? brandedShirtsCategory() : TF.state.aliasToCategory.get(group.label);
       if (!category) {
-        warnings.push(`Unknown category: ${group.label}`);
+        warnings.push(bundleGroup
+          ? 'Branded Shirts category is required before Business Bundles can be converted.'
+          : `Unknown category: ${group.label}`);
         return;
       }
 
       const itemQuantity = group.items.reduce((sum, item) => sum + item.quantity, 0);
-      const totalQuantity = group.quantity ?? itemQuantity;
-      if (group.quantity !== null && itemQuantity > 0 && itemQuantity !== group.quantity) {
+      const totalQuantity = bundleGroup ? expandedBundleQuantity(group) : (group.quantity ?? itemQuantity);
+      if (!bundleGroup && group.quantity !== null && itemQuantity > 0 && itemQuantity !== group.quantity) {
         warnings.push(`${group.label}: design lines total ${itemQuantity}, but Category Qty says ${group.quantity}. Category Qty was used.`);
+      }
+      if (bundleGroup) {
+        const legacyFp20 = group.items.some((item) => String(item.sku || '').toUpperCase() === 'FP20');
+        warnings.push(`Business Bundles converted to ${totalQuantity} Branded Shirts for inventory${legacyFp20 ? ' (FP20 kept as 20 shirts per bundle).' : ' (10 shirts per bundle).'}`);
       }
       if (!totalQuantity || totalQuantity <= 0) {
         warnings.push(`${group.label}: quantity is missing or zero.`);
         return;
       }
 
-      const preferredSku = group.items.find((item) => {
+      const preferredSku = bundleGroup ? '' : (group.items.find((item) => {
         const product = TF.state.productByCode.get(item.sku);
         return product?.category_id === category.id;
-      })?.sku || '';
+      })?.sku || '');
       const product = representativeProduct(category.id, preferredSku);
       if (!product) {
         warnings.push(`${category.name}: no active product is available internally for saving.`);
