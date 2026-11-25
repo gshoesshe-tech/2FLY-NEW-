@@ -37,6 +37,28 @@
     }
   ];
 
+  function isBusinessBundleLabel(value) {
+    const label = TF.normalizeCategoryLabel(value);
+    return label === 'BUSINESS BUNDLE' || label === 'BUSINESS BUNDLES';
+  }
+
+  function brandedShirtsCategory() {
+    return TF.state.categories.find((category) =>
+      category.code === 'BRANDED_SHIRTS' ||
+      TF.normalizeCategoryLabel(category.name) === 'BRANDED SHIRTS'
+    ) || TF.state.aliasToCategory.get('BRANDED SHIRTS') || null;
+  }
+
+  function expandedBundleQuantity(group) {
+    const lines = group.items || [];
+    if (!lines.length) return TF.num(group.quantity) * 10;
+    return lines.reduce((sum, item) => {
+      const sku = String(item.sku || '').toUpperCase();
+      const piecesPerBundle = sku === 'FP20' ? 20 : 10;
+      return sum + TF.num(item.quantity) * piecesPerBundle;
+    }, 0);
+  }
+
   function representativeProduct(categoryId, preferredSku) {
     const preferred = TF.state.productByCode.get(String(preferredSku || '').toUpperCase());
     if (preferred && preferred.category_id === categoryId && preferred.active) return preferred;
@@ -60,19 +82,18 @@
     const items = [];
 
     for (const group of parsed.groups || []) {
-      const category = TF.state.aliasToCategory.get(TF.normalizeCategoryLabel(group.label));
+      const bundleGroup = isBusinessBundleLabel(group.label);
+      const category = bundleGroup
+        ? brandedShirtsCategory()
+        : TF.state.aliasToCategory.get(TF.normalizeCategoryLabel(group.label));
       if (!category) {
-        errors.push('Unknown category: ' + group.label);
-        continue;
-      }
-      if (TF.normalizeCategoryLabel(group.label) === 'BUSINESS BUNDLES' &&
-          category.code !== 'BUSINESS_BUNDLES' &&
-          !/BUSINESS\s+BUNDLES?/i.test(String(category.name || ''))) {
-        errors.push('Business Bundles is mapped to the wrong 2FLY Numbers category (' + category.name + '). Fix the Business Bundles database category before saving.');
+        errors.push(bundleGroup
+          ? 'Branded Shirts category is required before Business Bundles can be converted.'
+          : 'Unknown category: ' + group.label);
         continue;
       }
 
-      const quantity = TF.num(group.quantity);
+      const quantity = bundleGroup ? expandedBundleQuantity(group) : TF.num(group.quantity);
       const amount = TF.num(group.amount);
       if (group.amount === null || group.amount === undefined) {
         errors.push(category.name + ': Category Amount is missing.');
@@ -83,7 +104,7 @@
         continue;
       }
 
-      const preferredSku = (group.items || []).find((sourceItem) => {
+      const preferredSku = bundleGroup ? null : (group.items || []).find((sourceItem) => {
         const product = TF.state.productByCode.get(String(sourceItem.sku || '').toUpperCase());
         return product && product.category_id === category.id;
       });
@@ -91,6 +112,11 @@
       if (!product) {
         errors.push(category.name + ': no active product is configured in 2FLY Numbers.');
         continue;
+      }
+
+      if (bundleGroup) {
+        const legacyFp20 = (group.items || []).some((item) => String(item.sku || '').toUpperCase() === 'FP20');
+        warnings.push('Business Bundles converted to ' + quantity + ' Branded Shirts for inventory' + (legacyFp20 ? ' (FP20 kept as 20 shirts per bundle).' : ' (10 shirts per bundle).'));
       }
 
       items.push({
@@ -126,7 +152,7 @@
       shipping_review_message: '',
       shipping_warning: '',
       product_total: parsed.product_total || calculated,
-      total_quantity: parsed.total_quantity || items.reduce((sum, item) => sum + TF.num(item.quantity), 0),
+      total_quantity: items.reduce((sum, item) => sum + TF.num(item.quantity), 0),
       items: items,
       warnings: warnings,
       base_errors: errors,
